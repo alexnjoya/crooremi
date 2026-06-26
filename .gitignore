@@ -74,3 +74,7 @@ agent/data/
 
 # Demo / local-only
 *.local.md
+
+# Local planning docs (private — not for public repo)
+devplan.md
+remifi.md
