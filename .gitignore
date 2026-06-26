@@ -69,8 +69,8 @@ temp/
 .cache/
 
 # Local policy storage (if agent writes JSON policies to disk)
-agent/data/
-!agent/data/.gitkeep
+data/
+!data/.gitkeep
 
 # Demo / local-only
 *.local.md

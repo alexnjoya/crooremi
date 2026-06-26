@@ -8,11 +8,11 @@ Remifi sits between **CROO CAP** (commerce / hiring) and **Base** (USDC settleme
 
 | Path | Role |
 |------|------|
-| `agent/src/cap/server.ts` | CAP SDK bootstrap, WebSocket, order listeners |
-| `agent/src/cap/handlers.ts` | `createPolicy`, `executePaymentJob` |
-| `agent/src/policy/interpreter.ts` | Natural language or JSON → `SplitPolicy` |
-| `agent/src/chain/client.ts` | viem clients for Base |
-| `agent/src/chain/router.ts` | Compute amounts from bps; USDC transfers |
+| `src/cap/server.ts` | CAP SDK bootstrap, WebSocket, order listeners |
+| `src/cap/handlers.ts` | `createPolicy`, `executePaymentJob` |
+| `src/policy/interpreter.ts` | Natural language or JSON → `SplitPolicy` |
+| `src/chain/client.ts` | viem clients for Base |
+| `src/chain/router.ts` | Compute amounts from bps; USDC transfers |
 | `web/app/page.tsx` | Demo: policy input, split preview, BaseScan links |
 
 ## SplitPolicy
