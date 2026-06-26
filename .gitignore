@@ -78,3 +78,5 @@ data/
 # Local planning docs (private — not for public repo)
 devplan.md
 remifi.md
+setup.md
+planupdate.md

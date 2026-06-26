@@ -9,7 +9,7 @@ const repoRoot = resolve(__dirname, "..");
 
 const envPath = resolve(repoRoot, ".env");
 if (existsSync(envPath)) {
-  loadEnv({ path: envPath });
+  loadEnv({ path: envPath, override: true });
 }
 
 const envSchema = z.object({
@@ -40,8 +40,15 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((value) => (value && value.trim() !== "" ? value : undefined)),
+  DEV_MOCK_SETTLEMENT: z
+    .string()
+    .optional()
+    .transform((value) => value === "true" || value === "1"),
   ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_MODEL: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
+  OPENAI_MODEL: z.string().optional(),
+  ENS_RPC_URL: z.string().url().optional(),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });

@@ -32,4 +32,6 @@ export type ExecutePaymentDelivery = {
     txHash: string;
   }>;
   baseExplorer: string;
+  mock?: boolean;
+  mockNote?: string;
 };

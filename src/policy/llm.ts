@@ -1,6 +1,6 @@
 import { ChatAnthropic } from "@langchain/anthropic";
 import { ChatOpenAI } from "@langchain/openai";
-import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { z } from "zod";
 import { env } from "../config.js";
 
@@ -25,49 +25,59 @@ const llmPolicySchema = z.object({
 
 export type LlmPolicyDraft = z.infer<typeof llmPolicySchema>;
 
-function createChatModel(): BaseChatModel {
-  if (env.ANTHROPIC_API_KEY) {
-    return new ChatAnthropic({
-      apiKey: env.ANTHROPIC_API_KEY,
-      model: "claude-sonnet-4-20250514",
-      temperature: 0,
-    });
-  }
+const policyPrompt = ChatPromptTemplate.fromMessages([
+  [
+    "system",
+    `You convert payment split instructions into structured split policies.
+Rules:
+- Express percentages as basis points (bps). 100% = 10000 bps. 40% = 4000 bps.
+- Recipients must sum to exactly 10000 bps.
+- Keep addresses exactly as given (0x hex or ENS names like alex.eth).
+- Use concise labels (team, ops, treasury, creator, etc.).`,
+  ],
+  ["human", "{requirements}"],
+]);
 
-  if (env.OPENAI_API_KEY) {
-    return new ChatOpenAI({
-      apiKey: env.OPENAI_API_KEY,
-      model: "gpt-4o-mini",
-      temperature: 0,
-    });
-  }
+function createAnthropicModel() {
+  return new ChatAnthropic({
+    apiKey: env.ANTHROPIC_API_KEY,
+    model: env.ANTHROPIC_MODEL ?? "claude-haiku-4-5-20251001",
+    temperature: 0,
+    maxRetries: 2,
+  });
+}
 
-  throw new Error(
-    "Natural-language createPolicy requires ANTHROPIC_API_KEY or OPENAI_API_KEY in .env",
-  );
+function createOpenAiModel() {
+  return new ChatOpenAI({
+    apiKey: env.OPENAI_API_KEY,
+    model: env.OPENAI_MODEL ?? "gpt-4o-mini",
+    temperature: 0,
+    maxRetries: 2,
+  });
 }
 
 export async function interpretPolicyText(
   requirements: string,
 ): Promise<LlmPolicyDraft> {
-  const model = createChatModel().withStructuredOutput(llmPolicySchema);
+  const baseModel = env.ANTHROPIC_API_KEY
+    ? createAnthropicModel()
+    : env.OPENAI_API_KEY
+      ? createOpenAiModel()
+      : null;
 
-  const result = await model.invoke([
-    {
-      role: "system",
-      content: `You convert payment split instructions into structured split policies.
-Rules:
-- Express percentages as basis points (bps). 100% = 10000 bps. 40% = 4000 bps.
-- Recipients must sum to exactly 10000 bps.
-- Keep addresses exactly as given (0x hex or ENS names like alex.eth).
-- Use concise labels (team, ops, treasury, creator, etc.).
-- Return only the structured fields; no commentary.`,
-    },
-    {
-      role: "user",
-      content: requirements,
-    },
-  ]);
+  if (!baseModel) {
+    throw new Error(
+      "Natural-language createPolicy requires ANTHROPIC_API_KEY or OPENAI_API_KEY in .env",
+    );
+  }
+
+  const structuredModel = baseModel.withStructuredOutput(llmPolicySchema, {
+    name: "SplitPolicy",
+    method: "jsonSchema",
+  });
+
+  const chain = policyPrompt.pipe(structuredModel);
+  const result = await chain.invoke({ requirements });
 
   return llmPolicySchema.parse(result);
 }

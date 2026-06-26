@@ -68,8 +68,8 @@ Reference: [CROO Quick Start](https://docs.croo.network/developer-docs/quick-sta
 
 | Service | ID |
 |---------|-----|
-| createPolicy | *(fill after dashboard setup)* |
-| executePaymentJob | *(fill after dashboard setup)* |
+| createPolicy | `svc-new-1782489505350` |
+| executePaymentJob | `svc-new-1782490750684` |
 
 ## Agent Store listing
 
