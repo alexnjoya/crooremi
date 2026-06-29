@@ -1,4 +1,5 @@
 import { EventType } from "@croo-network/sdk";
+import { setProviderOnline, stopHealthServer } from "../health.js";
 import { createAgentClient } from "./client.js";
 import {
   acceptNegotiation,
@@ -11,6 +12,7 @@ export async function startProvider(): Promise<void> {
   const stream = await client.connectWebSocket();
 
   console.log("[remifi] provider online — waiting for CAP orders");
+  setProviderOnline(true);
 
   stream.on(EventType.NegotiationCreated, async (event) => {
     const negotiationId = event.negotiation_id;
@@ -50,7 +52,9 @@ export async function startProvider(): Promise<void> {
 
   const shutdown = () => {
     console.log("[remifi] shutting down");
+    setProviderOnline(false);
     stream.close();
+    stopHealthServer();
     process.exit(0);
   };
 

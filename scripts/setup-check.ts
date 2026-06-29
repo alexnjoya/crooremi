@@ -27,9 +27,9 @@ const checks: Check[] = [
     hint: "Dashboard → executePaymentJob service ID",
   },
   {
-    label: "PROVIDER_AA_WALLET_ADDRESS",
-    ok: /^0x[a-fA-F0-9]{40}$/.test(process.env.PROVIDER_AA_WALLET_ADDRESS ?? ""),
-    hint: "Dashboard Configure page → AA Wallet (not Controller)",
+    label: "CROO_SERVICE_ID_CREATE_ENS",
+    ok: Boolean(process.env.CROO_SERVICE_ID_CREATE_ENS),
+    hint: "Dashboard → createEnsName service ID",
   },
   {
     label: "ANTHROPIC_API_KEY or OPENAI_API_KEY",
@@ -37,15 +37,15 @@ const checks: Check[] = [
     hint: "Required for natural-language createPolicy",
   },
   {
-    label: "AGENT_WALLET_PRIVATE_KEY",
+    label: "ENS_REGISTRAR_PRIVATE_KEY",
     ok:
-      process.env.DEV_MOCK_SETTLEMENT === "true" ||
-      process.env.DEV_MOCK_SETTLEMENT === "1" ||
-      Boolean(process.env.AGENT_WALLET_PRIVATE_KEY),
+      process.env.DEV_MOCK_ENS_SUBNAMES === "true" ||
+      process.env.DEV_MOCK_ENS_SUBNAMES === "1" ||
+      Boolean(process.env.ENS_REGISTRAR_PRIVATE_KEY),
     hint:
-      process.env.DEV_MOCK_SETTLEMENT === "true"
-        ? "Skipped — DEV_MOCK_SETTLEMENT=true"
-        : "Or run: npm run deposit -- --mock",
+      process.env.DEV_MOCK_ENS_SUBNAMES === "true"
+        ? "Skipped — DEV_MOCK_ENS_SUBNAMES=true"
+        : "Operator wallet for Base ENS registration gas",
   },
   {
     label: "CROO_REQUESTER_SDK_KEY (E2E)",
@@ -82,17 +82,12 @@ const canCreatePolicyE2e =
   canCreatePolicyLocal &&
   checks.find((c) => c.label.startsWith("CROO_REQUESTER"))?.ok;
 
-const canExecutePayment =
-  checks.find((c) => c.label === "PROVIDER_AA_WALLET_ADDRESS")?.ok &&
-  (checks.find((c) => c.label === "AGENT_WALLET_PRIVATE_KEY")?.ok ?? false);
-
-const mockSettlement =
-  process.env.DEV_MOCK_SETTLEMENT === "true" ||
-  process.env.DEV_MOCK_SETTLEMENT === "1";
+const canExecutePayment = checks.find((c) => c.label.startsWith("CROO_REQUESTER"))?.ok;
 
 console.log("Next steps:");
 console.log(`  ENS forward/reverse:             npm run test:ens`);
 console.log(`  JSON policy parse (no network):  npm run test:policy`);
+console.log(`  Full A2A journey (auto-chain):   npm run test:full-journey`);
 console.log(`  Agent + CAP service check:       npm run verify:agent`);
 if (canCreatePolicyE2e) {
   console.log(`  CAP createPolicy E2E:            npm run dev + npm run test:create-policy`);
@@ -100,13 +95,9 @@ if (canCreatePolicyE2e) {
   console.log(`  CAP createPolicy E2E:            register 2nd agent + fund USDC + set requester env`);
 }
 if (canExecutePayment) {
-  console.log(
-    mockSettlement
-      ? `  CAP executePaymentJob E2E:       npm run test:execute-payment (mock txs)`
-      : `  CAP executePaymentJob E2E:       npm run test:execute-payment`,
-  );
+  console.log(`  CAP executePaymentJob E2E:       npm run test:execute-payment`);
 } else {
-  console.log(`  CAP executePaymentJob E2E:       npm run deposit -- --mock`);
+  console.log(`  CAP executePaymentJob E2E:       register 2nd agent + fund USDC`);
 }
 console.log("");
 

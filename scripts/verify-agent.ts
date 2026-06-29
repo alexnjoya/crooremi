@@ -32,6 +32,10 @@ async function verifyService(
     row(label, true, `negotiation ${neg.negotiationId}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("cannot negotiate own service")) {
+      row(label, true, "service exists (use a 2nd agent to hire)");
+      return;
+    }
     row(label, false, message);
   }
 }
@@ -39,6 +43,11 @@ async function verifyService(
 console.log("\nRemifi agent verify\n");
 
 row("CROO_SDK_KEY", env.CROO_SDK_KEY.startsWith("croo_sk_"));
+row(
+  "createEnsName service ID configured",
+  Boolean(env.CROO_SERVICE_ID_CREATE_ENS),
+  env.CROO_SERVICE_ID_CREATE_ENS,
+);
 row(
   "createPolicy service ID configured",
   Boolean(env.CROO_SERVICE_ID_CREATE_POLICY),
@@ -49,7 +58,6 @@ row(
   Boolean(env.CROO_SERVICE_ID_EXECUTE_PAYMENT),
   env.CROO_SERVICE_ID_EXECUTE_PAYMENT,
 );
-row("PROVIDER_AA_WALLET_ADDRESS", Boolean(env.PROVIDER_AA_WALLET_ADDRESS));
 row(
   "AI key (NL createPolicy)",
   Boolean(env.ANTHROPIC_API_KEY || env.OPENAI_API_KEY),
@@ -85,6 +93,16 @@ try {
 
 console.log("\nCAP service reachability (negotiate only):");
 await verifyService(
+  "createEnsName on CAP",
+  env.CROO_SERVICE_ID_CREATE_ENS,
+  JSON.stringify({
+    org: "acme",
+    subname: "verify",
+    address: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0",
+  }),
+);
+
+await verifyService(
   "createPolicy on CAP",
   env.CROO_SERVICE_ID_CREATE_POLICY,
   JSON.stringify({
@@ -104,16 +122,10 @@ await verifyService(
   env.CROO_SERVICE_ID_EXECUTE_PAYMENT,
   JSON.stringify({
     policyId: "pol_verify",
-    totalUsdc: "1000000",
-    policy: {
-      name: "Verify",
-      recipients: [
-        {
-          address: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0",
-          label: "team",
-          bps: 10000,
-        },
-      ],
+    recipient: {
+      address: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0",
+      label: "team",
+      amount: "1000000",
     },
   }),
 );

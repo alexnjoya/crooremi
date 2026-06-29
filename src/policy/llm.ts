@@ -6,13 +6,25 @@ import { env } from "../config.js";
 
 const llmPolicySchema = z.object({
   name: z.string().describe("Short human-readable policy name"),
+  org: z
+    .string()
+    .optional()
+    .describe(
+      "User's org label for Base names (e.g. acme → acme.base.eth). Required when using subnames.",
+    ),
   recipients: z
     .array(
       z.object({
         address: z
           .string()
-          .describe("Recipient 0x address or ENS name (e.g. alex.eth)"),
+          .describe("Recipient 0x address or Base name (e.g. alice.base.eth)"),
         label: z.string().describe("Role label: team, ops, treasury, etc."),
+        subname: z
+          .string()
+          .optional()
+          .describe(
+            "Optional ENS sublabel under the user's org (e.g. payroll → payroll.acme.base.eth)",
+          ),
         bps: z
           .number()
           .int()
@@ -32,7 +44,9 @@ const policyPrompt = ChatPromptTemplate.fromMessages([
 Rules:
 - Express percentages as basis points (bps). 100% = 10000 bps. 40% = 4000 bps.
 - Recipients must sum to exactly 10000 bps.
-- Keep addresses exactly as given (0x hex or ENS names like alex.eth).
+- Keep addresses exactly as given (0x hex or Base names like alice.base.eth).
+- Optional org: user's basename label (e.g. acme → names under acme.base.eth).
+- Optional subname: short label under that org (e.g. payroll → payroll.acme.base.eth).
 - Use concise labels (team, ops, treasury, creator, etc.).`,
   ],
   ["human", "{requirements}"],

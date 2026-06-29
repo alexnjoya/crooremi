@@ -4,11 +4,13 @@ import {
   type Negotiation,
   type Order,
 } from "@croo-network/sdk";
-import { env, isCreatePolicyService, isExecutePaymentService } from "../config.js";
-import { executePaymentSplit } from "../chain/router.js";
+import { isCreateEnsService, isCreatePolicyService, isExecutePaymentService } from "../config.js";
+import { executeCrooDirectSettlement } from "../chain/croo-settlement.js";
+import { createEnsFromRequirements } from "../policy/ens-service.js";
 import {
   interpretPolicyFromRequirements,
-  parseExecutePaymentInput,
+  parseExecutePayoutLeg,
+  resolveExecuteFundAddress,
 } from "../policy/interpreter.js";
 
 export type HandlerContext = {
@@ -40,6 +42,14 @@ async function deliverSchema(
   });
 }
 
+async function handleCreateEnsName(ctx: HandlerContext): Promise<void> {
+  const delivery = await createEnsFromRequirements(ctx.negotiation.requirements);
+  const ens =
+    "names" in delivery ? delivery.names[0]?.ens : delivery.ens;
+  log("info", `createEnsName delivered ${ens ?? "batch"}`);
+  await deliverSchema(ctx.client, ctx.orderId, delivery as Record<string, unknown>);
+}
+
 async function handleCreatePolicy(ctx: HandlerContext): Promise<void> {
   const delivery = await interpretPolicyFromRequirements(ctx.negotiation.requirements);
   log("info", `createPolicy delivered ${delivery.policyId}`);
@@ -47,9 +57,10 @@ async function handleCreatePolicy(ctx: HandlerContext): Promise<void> {
 }
 
 async function handleExecutePayment(ctx: HandlerContext): Promise<void> {
-  const input = parseExecutePaymentInput(ctx.negotiation.requirements);
-  const delivery = await executePaymentSplit(input);
+  const leg = parseExecutePayoutLeg(ctx.negotiation.requirements);
+  const delivery = executeCrooDirectSettlement(ctx.order, leg);
   log("info", `executePaymentJob delivered ${delivery.policyId}`, {
+    settlement: delivery.settlement,
     txCount: delivery.txHashes.length,
   });
   await deliverSchema(ctx.client, ctx.orderId, delivery);
@@ -67,6 +78,11 @@ export async function handleOrderPaid(
     serviceId: order.serviceId,
   });
 
+  if (isCreateEnsService(order.serviceId)) {
+    await handleCreateEnsName(ctx);
+    return;
+  }
+
   if (isCreatePolicyService(order.serviceId)) {
     await handleCreatePolicy(ctx);
     return;
@@ -78,8 +94,8 @@ export async function handleOrderPaid(
   }
 
   throw new Error(
-    `Unknown service ${order.serviceId}. Set CROO_SERVICE_ID_CREATE_POLICY and ` +
-      `CROO_SERVICE_ID_EXECUTE_PAYMENT in .env.`,
+    `Unknown service ${order.serviceId}. Set CROO_SERVICE_ID_CREATE_POLICY, ` +
+      `CROO_SERVICE_ID_CREATE_ENS, and CROO_SERVICE_ID_EXECUTE_PAYMENT in .env.`,
   );
 }
 
@@ -90,18 +106,12 @@ export async function acceptNegotiation(
   const { negotiationId, serviceId } = negotiation;
 
   if (isExecutePaymentService(serviceId)) {
-    const fundAddress = env.PROVIDER_AA_WALLET_ADDRESS;
-    if (!fundAddress) {
-      throw new Error(
-        "PROVIDER_AA_WALLET_ADDRESS is required to accept executePaymentJob " +
-          "(fund transfer service). Copy AA Wallet from CROO dashboard.",
-      );
-    }
+    const fundAddress = resolveExecuteFundAddress(negotiation.requirements);
     const result = await client.acceptNegotiationWithFundAddress(
       negotiationId,
       fundAddress,
     );
-    log("info", `accepted fund-transfer negotiation → order ${result.order.orderId}`);
+    log("info", `accepted fund-transfer → ${fundAddress} → order ${result.order.orderId}`);
     return;
   }
 

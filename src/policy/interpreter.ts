@@ -1,20 +1,25 @@
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { env } from "../config.js";
+import { ensureUserOrg, resolveUserOrg, canProvisionEns } from "./ens-org.js";
 import { resolveRecipients } from "./ens.js";
+import { provisionPolicySubnames } from "./ens-subnames.js";
 import { interpretPolicyText } from "./llm.js";
 import type {
   CreatePolicyDelivery,
-  ExecutePaymentInput,
+  ExecutePayoutLeg,
 } from "./types.js";
 
 type PolicyDraft = {
   name: string;
+  org?: string;
+  ensParent?: string;
   recipients: Array<{
     address: string;
     label: string;
     bps: number;
     ens?: string;
+    subname?: string;
   }>;
 };
 
@@ -25,34 +30,33 @@ const recipientSchema = z.object({
   label: z.string().min(1),
   bps: z.number().int().positive(),
   ens: z.string().optional(),
+  subname: z.string().optional(),
 });
 
 const policyBodySchema = z.object({
   name: z.string().min(1),
+  org: z.string().optional(),
+  ensParent: z.string().optional(),
   recipients: z.array(recipientSchema).min(1),
 });
 
 const createPolicyJsonSchema = z.object({
   name: z.string().min(1).optional(),
+  org: z.string().optional(),
+  ensParent: z.string().optional(),
   policy: policyBodySchema.optional(),
   recipients: z.array(recipientSchema).min(1).optional(),
 });
 
-const executePaymentSchema = z.object({
+const executePayoutLegSchema = z.object({
   policyId: z.string().min(1),
-  totalUsdc: z.string().regex(/^\d+$/),
-  policy: z.object({
-    name: z.string().min(1),
-    recipients: z.array(
-      z.object({
-        address: z
-          .string()
-          .regex(/^0x[a-fA-F0-9]{40}$/)
-          .transform((value) => value as `0x${string}`),
-        label: z.string().min(1),
-        bps: z.number().int().positive(),
-      }),
-    ),
+  recipient: z.object({
+    address: z
+      .string()
+      .regex(/^0x[a-fA-F0-9]{40}$/)
+      .transform((value) => value as `0x${string}`),
+    label: z.string().min(1),
+    amount: z.string().regex(/^\d+$/),
   }),
 });
 
@@ -67,6 +71,16 @@ function assertBpsSum(recipients: Array<{ bps: number }>): void {
   }
 }
 
+function resolvePolicyOrgDomain(draft: PolicyDraft): string | undefined {
+  if (draft.ensParent) {
+    return draft.ensParent.includes(".") ? draft.ensParent : resolveUserOrg(draft.ensParent).domain;
+  }
+  if (draft.org) {
+    return resolveUserOrg(draft.org).domain;
+  }
+  return undefined;
+}
+
 function normalizePolicyBody(
   input: z.infer<typeof createPolicyJsonSchema>,
 ): PolicyDraft {
@@ -79,6 +93,8 @@ function normalizePolicyBody(
     assertBpsSum(input.recipients);
     return {
       name: input.name ?? "Split policy",
+      org: input.org,
+      ensParent: input.ensParent,
       recipients: input.recipients,
     };
   }
@@ -96,13 +112,35 @@ function tryParseJson(raw: string): unknown {
 
 async function finalizePolicy(draft: PolicyDraft): Promise<CreatePolicyDelivery> {
   assertBpsSum(draft.recipients);
-  const recipients = await resolveRecipients(draft.recipients);
+  let recipients = await resolveRecipients(draft.recipients);
+
+  const parentDomain = resolvePolicyOrgDomain(draft);
+  const hasSubnames = draft.recipients.some((r) => r.subname);
+  let ensSubnames: CreatePolicyDelivery["ensSubnames"];
+  let ensParentRegistration: CreatePolicyDelivery["ensParentRegistration"];
+
+  if (parentDomain && hasSubnames && canProvisionEns()) {
+    ensParentRegistration = await ensureUserOrg(
+      draft.org ?? draft.ensParent ?? parentDomain,
+    );
+    const withSubnames = recipients.map((r, i) => ({
+      ...r,
+      subname: draft.recipients[i]?.subname,
+    }));
+    const provisioned = await provisionPolicySubnames(withSubnames, parentDomain);
+    recipients = provisioned.recipients;
+    ensSubnames = provisioned.ensSubnames;
+    ensParentRegistration = provisioned.ensParentRegistration ?? undefined;
+  }
+
   return {
     policyId: newPolicyId(),
     policy: {
       name: draft.name,
       recipients,
     },
+    ...(ensSubnames?.length ? { ensSubnames, ensParent: parentDomain } : {}),
+    ...(ensParentRegistration ? { ensParentRegistration } : {}),
   };
 }
 
@@ -132,9 +170,7 @@ export async function interpretPolicyFromRequirements(
   return finalizePolicy(draft);
 }
 
-export function parseExecutePaymentInput(
-  requirements: string,
-): ExecutePaymentInput {
+export function parseExecutePayoutLeg(requirements: string): ExecutePayoutLeg {
   const trimmed = requirements.trim();
   if (!trimmed) {
     throw new Error("executePaymentJob requirements cannot be empty");
@@ -145,7 +181,10 @@ export function parseExecutePaymentInput(
     throw new Error("executePaymentJob requires Schema JSON input");
   }
 
-  const parsed = executePaymentSchema.parse(asJson);
-  assertBpsSum(parsed.policy.recipients);
-  return parsed;
+  return executePayoutLegSchema.parse(asJson);
+}
+
+/** CROO routes USDC to this address at payOrder time. */
+export function resolveExecuteFundAddress(requirements: string): `0x${string}` {
+  return parseExecutePayoutLeg(requirements).recipient.address;
 }

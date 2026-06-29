@@ -5,8 +5,8 @@ Remifi is a **CAP provider** using [@croo-network/sdk](https://docs.croo.network
 ## Registration
 
 1. [agent.croo.network](https://agent.croo.network) → Register Agent → copy `CROO_SDK_KEY`
-2. Configure services (see below)
-3. Deposit USDC to **AA Wallet Address** on dashboard
+2. Configure three services (see [setup.md](../setup.md))
+3. Fund **requester** AA wallet with USDC for E2E tests
 
 ## Environment
 
@@ -14,62 +14,78 @@ Remifi is a **CAP provider** using [@croo-network/sdk](https://docs.croo.network
 CROO_API_URL=https://api.croo.network
 CROO_WS_URL=wss://api.croo.network/ws
 CROO_SDK_KEY=croo_sk_...
+CROO_SERVICE_ID_CREATE_ENS=...
+CROO_SERVICE_ID_CREATE_POLICY=...
+CROO_SERVICE_ID_EXECUTE_PAYMENT=...
 ```
+
+USDC payouts use **CROO direct settlement** — no provider private key. CROO's `payOrder` batch sends USDC to the recipient address declared at accept time.
 
 ## Services
 
-### createPolicy
+### createEnsName (ENS Payout Identity)
+
+| Field | Value |
+|-------|-------|
+| Requirements | Schema |
+| Deliverable | Schema |
+| Fund transfer | OFF |
+
+### createPolicy (USDC Split Policy)
 
 | Field | Value |
 |-------|-------|
 | Requirements | Text or Schema |
 | Deliverable | Schema |
-| SLA | e.g. 5 minutes |
+| Fund transfer | OFF |
 
-**Delivery example:**
+### executePaymentJob (USDC Split Execution)
+
+| Field | Value |
+|-------|-------|
+| Requirements | Schema (one payout leg per hire) |
+| Deliverable | Schema |
+| Fund transfer | **ON** |
+
+**Requirements (one recipient per order):**
+
 ```json
 {
   "policyId": "pol_abc123",
-  "policy": {
-    "name": "Team revenue split",
-    "recipients": [
-      { "address": "0x...", "label": "team", "bps": 4000 },
-      { "address": "0x...", "label": "treasury", "bps": 6000 }
-    ]
+  "recipient": {
+    "address": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0",
+    "label": "team",
+    "amount": "600000"
   }
 }
 ```
 
-### executePaymentJob
+At accept, Remifi sets `providerFundAddress` = `recipient.address`. CROO routes USDC there on `payOrder`.
 
-| Field | Value |
-|-------|-------|
-| Requirements | Schema (policyId or inline policy + amount) |
-| Deliverable | Schema |
-| SLA | e.g. 15 minutes |
+**Delivery:**
 
-**Delivery example:**
 ```json
 {
   "policyId": "pol_abc123",
-  "totalUsdc": "1000000",
-  "txHashes": ["0x...", "0x..."],
-  "recipients": [{ "label": "team", "amount": "400000", "txHash": "0x..." }]
+  "totalUsdc": "600000",
+  "txHashes": ["0x..."],
+  "recipients": [{ "label": "team", "amount": "600000", "txHash": "0x..." }],
+  "baseExplorer": "https://basescan.org/tx/0x...",
+  "settlement": "croo_direct"
 }
 ```
 
+Multi-recipient splits = **one CAP hire per recipient** (see `npm run test:full-journey`).
+
 ## SDK flow
 
-Provider listens for `order_paid`, runs handler, calls `DeliverOrder` with structured JSON.
+```
+NegotiateOrder → AcceptNegotiationWithFundAddress(recipient)
+→ PayOrder (CROO signs) → order_paid
+→ DeliverOrder (payTxHash as proof)
+```
 
 Reference: [CROO Quick Start](https://docs.croo.network/developer-docs/quick-start.md)
-
-## Service IDs
-
-| Service | ID |
-|---------|-----|
-| createPolicy | `svc-new-1782489505350` |
-| executePaymentJob | `svc-new-1782490750684` |
 
 ## Agent Store listing
 

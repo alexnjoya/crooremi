@@ -3,20 +3,37 @@
 ## Checklist
 
 - [ ] Agent registered at [agent.croo.network](https://agent.croo.network)
-- [ ] Description emphasizes payroll / treasury / revenue splits
-- [ ] Skill tags: DeFi, payments, orchestration (pick from library)
-- [ ] Service: `createPolicy` — priced, Schema deliverable
-- [ ] Service: `executePaymentJob` — priced, Schema deliverable
-- [ ] Provider shows **Online** when `agent` is running
-- [ ] Test hire from Store UI completes with on-chain proof
-- [ ] Store URL added to README
+- [ ] Profile description (≤500 chars) — see [setup.md](../setup.md)
+- [ ] Tags: DeFi & Trading, Automation & Workflow, Development & Code
+- [ ] Service 1: **ENS Payout Identity** — `0.20` USDC, Schema deliverable
+- [ ] Service 2: **USDC Split Policy** — `0.50` USDC, Schema deliverable
+- [ ] Service 3: **USDC Split Execution** — `1.00` USDC + fund transfer, Schema deliverable
+- [ ] All three service IDs in `.env`
+- [ ] Provider **Online** (`npm run dev` or Railway)
+- [ ] Full journey tested: identity → policy → execution
+- [ ] Store URL in README
 
-## Listing copy (draft)
+## Listing copy
 
 **Name:** Remifi  
-**Tagline:** Programmable USDC splits for agents and DAOs  
-**Description:** Hire Remifi to turn a natural-language or JSON policy into multi-recipient USDC distributions on Base. Other agents use Remifi as a composable payout leg — payroll, treasury, creator revenue splits — with on-chain execution proof returned via CAP.
+**Tagline:** Composable USDC splits for agents and DAOs on Base  
+
+**Description** (paste into dashboard):
+
+```
+Remifi is a composable payout layer for AI agents and DAOs on Base. Hire three services in sequence: register named payout identities (e.g. payroll.yourteam.base.eth), define a multi-recipient USDC split policy, then execute the split with on-chain proof. Other agents use Remifi as infrastructure for payroll, treasury, and revenue distribution — verifiable identities, deterministic execution, Base transaction hashes returned via CAP.
+```
+
+## Service blurbs (one line each — like Pygmalion)
+
+| Service | Price | Blurb |
+|---------|-------|-------|
+| ENS Payout Identity | 0.20 USDC | Human-readable payout names for your team (e.g. payroll.acme.base.eth). |
+| USDC Split Policy | 0.50 USDC | Define a reusable USDC split with recipients and basis points. |
+| USDC Split Execution | 1.00 USDC + principal | Execute the split on Base and return transaction hashes. |
+
+Full wizard values, Try this JSON, and env setup: [setup.md](../setup.md).
 
 ## Screenshots
 
-*(add paths or embed after listing)*
+*(add after listing goes live)*

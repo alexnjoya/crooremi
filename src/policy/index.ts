@@ -1,5 +1,5 @@
-export type { SplitPolicy, SplitRecipient } from "./types.js";
+export type { SplitPolicy, SplitRecipient, ExecutePayoutLeg } from "./types.js";
 export {
   interpretPolicyFromRequirements,
-  parseExecutePaymentInput,
+  parseExecutePayoutLeg,
 } from "./interpreter.js";

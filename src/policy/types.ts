@@ -1,8 +1,21 @@
+export type EnsParentRegistration = {
+  parent: string;
+  label: string;
+  registered: boolean;
+  alreadyExisted: boolean;
+  txHashes: string[];
+  owner: `0x${string}`;
+  durationYears: number;
+  chain?: "base";
+  mock?: boolean;
+};
+
 export type SplitRecipient = {
   address: `0x${string}`;
   label: string;
   bps: number;
   ens?: string;
+  subname?: string;
 };
 
 export type SplitPolicy = {
@@ -11,15 +24,42 @@ export type SplitPolicy = {
   recipients: SplitRecipient[];
 };
 
+export type EnsSubnameProvision = {
+  ens: string;
+  address: `0x${string}`;
+  created: boolean;
+  txHashes: string[];
+};
+
 export type CreatePolicyDelivery = {
   policyId: string;
   policy: Omit<SplitPolicy, "id"> & { recipients: SplitRecipient[] };
+  ensSubnames?: EnsSubnameProvision[];
+  ensParent?: string;
+  ensParentRegistration?: EnsParentRegistration;
 };
 
-export type ExecutePaymentInput = {
+export type CreateEnsDelivery = {
+  org: string;
+  orgLabel: string;
+  subname?: string;
+  ens: string;
+  address: `0x${string}`;
+  created: boolean;
+  txHashes: string[];
+  orgRegistration?: EnsParentRegistration;
+  baseExplorer?: string;
+  mock?: boolean;
+};
+
+/** Single-recipient payout — CROO routes USDC at payOrder time. */
+export type ExecutePayoutLeg = {
   policyId: string;
-  totalUsdc: string;
-  policy: Omit<SplitPolicy, "id">;
+  recipient: {
+    address: `0x${string}`;
+    label: string;
+    amount: string;
+  };
 };
 
 export type ExecutePaymentDelivery = {
@@ -32,6 +72,5 @@ export type ExecutePaymentDelivery = {
     txHash: string;
   }>;
   baseExplorer: string;
-  mock?: boolean;
-  mockNote?: string;
+  settlement: "croo_direct";
 };

@@ -20,8 +20,8 @@ const sdkKey =
   process.env.CROO_REQUESTER_SDK_KEY?.trim() ||
   process.env.CROO_SDK_KEY?.trim();
 const serviceId =
-  process.env.CROO_TARGET_SERVICE_ID?.trim() ||
-  process.env.CROO_SERVICE_ID_CREATE_POLICY?.trim();
+  process.env.CROO_SERVICE_ID_CREATE_POLICY?.trim() ||
+  process.env.CROO_TARGET_SERVICE_ID?.trim();
 
 if (!sdkKey) throw new Error("Set CROO_REQUESTER_SDK_KEY or CROO_SDK_KEY");
 if (!serviceId) throw new Error("Set CROO_TARGET_SERVICE_ID or CROO_SERVICE_ID_CREATE_POLICY");
