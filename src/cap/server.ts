@@ -7,7 +7,26 @@ import {
   handleOrderPaid,
 } from "./handlers.js";
 
-export async function startProvider(): Promise<void> {
+const RECONNECT_DELAY_MS = 5_000;
+const MAX_RECONNECT_DELAY_MS = 60_000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function registerShutdownHandlers(): void {
+  const shutdown = () => {
+    console.log("[remifi] shutting down");
+    setProviderOnline(false);
+    stopHealthServer();
+    process.exit(0);
+  };
+
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
+}
+
+async function runProviderSession(): Promise<void> {
   const client = createAgentClient();
   const stream = await client.connectWebSocket();
 
@@ -50,14 +69,24 @@ export async function startProvider(): Promise<void> {
     console.log(`[remifi] order ${event.order_id} completed`);
   });
 
-  const shutdown = () => {
-    console.log("[remifi] shutting down");
-    setProviderOnline(false);
-    stream.close();
-    stopHealthServer();
-    process.exit(0);
-  };
+  await new Promise<void>(() => {});
+}
 
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+export async function startProvider(): Promise<void> {
+  registerShutdownHandlers();
+
+  let delay = RECONNECT_DELAY_MS;
+
+  while (true) {
+    try {
+      await runProviderSession();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[remifi] provider connect failed: ${message}`);
+      console.error(`[remifi] retrying in ${delay / 1000}s (health server stays up)`);
+      setProviderOnline(false);
+      await sleep(delay);
+      delay = Math.min(delay * 2, MAX_RECONNECT_DELAY_MS);
+    }
+  }
 }

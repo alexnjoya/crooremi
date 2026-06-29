@@ -9,7 +9,8 @@ export function setProviderOnline(online: boolean): void {
 
 export function startHealthServer(port = Number(process.env.PORT) || 3001): Server {
   server = createServer((req, res) => {
-    if (req.url === "/health" || req.url === "/") {
+    const path = req.url?.split("?")[0];
+    if (path === "/health" || path === "/") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
