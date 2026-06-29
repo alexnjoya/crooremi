@@ -1,20 +1,11 @@
 import { normalize } from "viem/ens";
 import { env } from "../config.js";
-import { DEFAULT_ORG_DOMAIN } from "./ens-constants.js";
 import { parseBasenameLabel, registerBasenameParent, getBasenameRegistryOwner } from "./ens-register-base.js";
 import { resolveAddressInput } from "./ens.js";
 import type { EnsParentRegistration } from "./types.js";
 
 const LABEL_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
-/** Remifi's own demo org — not forced on users. */
-export function getDefaultOrgDomain(): string {
-  return normalize(
-    env.ENS_ORG_DOMAIN ?? env.ENS_PARENT_DOMAIN ?? DEFAULT_ORG_DOMAIN,
-  );
-}
-
-/** User org label or full domain → `{ label, domain }` e.g. acme → acme.base.eth */
 export function resolveUserOrg(orgInput: string): { label: string; domain: string } {
   const trimmed = orgInput.trim().toLowerCase();
 
@@ -60,20 +51,6 @@ async function registerOrgDomain(orgDomain: string): Promise<EnsParentRegistrati
   return registerBasenameParent(orgDomain);
 }
 
-/** Operator's pre-registered test parent (*.base.eth) — subnames only, never auto-register. */
-export function getOperatorTestParentDomain(): string | undefined {
-  const raw = env.ENS_PARENT_DOMAIN?.trim();
-  if (!raw) return undefined;
-  return normalize(raw.includes(".") ? raw : `${raw}.base.eth`);
-}
-
-export function isOperatorTestParent(orgDomain: string): boolean {
-  const testParent = getOperatorTestParentDomain();
-  if (!testParent) return false;
-  return normalize(orgDomain) === testParent;
-}
-
-/** Paid createEnsName — ensure user's org exists; register only when not on Base registry. */
 export async function ensureUserOrg(orgInput: string): Promise<EnsParentRegistration> {
   if (!canProvisionEns()) {
     throw new Error(
@@ -98,7 +75,7 @@ export async function ensureUserOrg(orgInput: string): Promise<EnsParentRegistra
       };
     }
   } catch {
-    // forward resolve failed — check registry owner (name may exist without addr record)
+    // no forward addr — check registry
   }
 
   const registryOwner = await getBasenameRegistryOwner(domain);
@@ -115,18 +92,9 @@ export async function ensureUserOrg(orgInput: string): Promise<EnsParentRegistra
     };
   }
 
-  if (isOperatorTestParent(domain)) {
-    throw new Error(
-      `${domain} is configured as ENS_PARENT_DOMAIN for operator testing but is not registered on Base. ` +
-        "Register it once at https://www.base.org/names, then create subnames under it.",
-    );
-  }
-
-  console.log(`[remifi] user org ${domain} not on Base — registering basename…`);
   return registerOrgDomain(domain);
 }
 
-/** Optional auto-register for createPolicy when ENS_AUTO_REGISTER_PARENT=true. */
 export async function ensureOrgParent(
   orgDomain: string,
 ): Promise<EnsParentRegistration | null> {

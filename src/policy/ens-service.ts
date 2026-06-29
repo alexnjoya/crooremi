@@ -30,15 +30,7 @@ function tryParseJson(raw: string): unknown {
 }
 
 /**
- * createEnsName — each user brings their own org (e.g. acme → acme.base.eth).
- *
- * Operator testing: set ENS_PARENT_DOMAIN to your existing *.base.eth; only subnames
- * are created under it. New user hires still get basename registration when needed.
- *
- * Modes:
- *   { org: "acme", address: "0x..." }                    → register acme.base.eth
- *   { org: "acme", subname: "payroll", address: "0x..." } → payroll.acme.base.eth
- *   { org: "acme", names: [{ subname, address }, ...] }   → batch subnames
+ * createEnsName — user org (e.g. acme → acme.base.eth) + optional subnames.
  */
 export async function createEnsFromRequirements(
   requirements: string,

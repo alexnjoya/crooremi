@@ -75,7 +75,7 @@ At accept, Remifi sets `providerFundAddress` = `recipient.address`. CROO routes 
 }
 ```
 
-Multi-recipient splits = **one CAP hire per recipient** (see `npm run test:full-journey`).
+Multi-recipient splits = **one CAP hire per recipient** (see `npm run sample:flow`).
 
 ## SDK flow
 

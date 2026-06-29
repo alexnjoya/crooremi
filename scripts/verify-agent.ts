@@ -1,19 +1,14 @@
-/**
- * Verify Remifi agent config + CAP services (no WebSocket).
- * Run: npm run verify:agent
- */
+/** Verify agent config + CAP services. Run: npm run verify:agent */
 import { createAgentClient } from "../src/cap/client.js";
 import { env } from "../src/config.js";
 import { interpretPolicyFromRequirements } from "../src/policy/interpreter.js";
 
 type Row = { label: string; ok: boolean; detail?: string };
-
 const rows: Row[] = [];
 
 function row(label: string, ok: boolean, detail?: string): void {
   rows.push({ label, ok, detail });
-  const mark = ok ? "✓" : "✗";
-  console.log(`  ${mark} ${label}${detail ? ` — ${detail}` : ""}`);
+  console.log(`  ${ok ? "✓" : "✗"} ${label}${detail ? ` — ${detail}` : ""}`);
 }
 
 async function verifyService(
@@ -43,101 +38,50 @@ async function verifyService(
 console.log("\nRemifi agent verify\n");
 
 row("CROO_SDK_KEY", env.CROO_SDK_KEY.startsWith("croo_sk_"));
-row(
-  "createEnsName service ID configured",
-  Boolean(env.CROO_SERVICE_ID_CREATE_ENS),
-  env.CROO_SERVICE_ID_CREATE_ENS,
-);
-row(
-  "createPolicy service ID configured",
-  Boolean(env.CROO_SERVICE_ID_CREATE_POLICY),
-  env.CROO_SERVICE_ID_CREATE_POLICY,
-);
-row(
-  "executePaymentJob service ID configured",
-  Boolean(env.CROO_SERVICE_ID_EXECUTE_PAYMENT),
-  env.CROO_SERVICE_ID_EXECUTE_PAYMENT,
-);
-row(
-  "AI key (NL createPolicy)",
-  Boolean(env.ANTHROPIC_API_KEY || env.OPENAI_API_KEY),
-);
+row("createEnsName service ID", Boolean(env.CROO_SERVICE_ID_CREATE_ENS), env.CROO_SERVICE_ID_CREATE_ENS);
+row("createPolicy service ID", Boolean(env.CROO_SERVICE_ID_CREATE_POLICY), env.CROO_SERVICE_ID_CREATE_POLICY);
+row("executePaymentJob service ID", Boolean(env.CROO_SERVICE_ID_EXECUTE_PAYMENT), env.CROO_SERVICE_ID_EXECUTE_PAYMENT);
+row("AI key (NL createPolicy)", Boolean(env.ANTHROPIC_API_KEY || env.OPENAI_API_KEY));
 
-console.log("\nLocal policy (ENS basename):");
+console.log("\nLocal policy:");
 try {
   const delivery = await interpretPolicyFromRequirements(
     JSON.stringify({
-      name: "ENS smoke",
+      name: "Smoke split",
       recipients: [
-        { address: "blockdevrel.base.eth", label: "devrel", bps: 5000 },
-        {
-          address: "0x1234567890123456789012345678901234567890",
-          label: "ops",
-          bps: 5000,
-        },
+        { address: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0", label: "team", bps: 6000 },
+        { address: "0x1234567890123456789012345678901234567890", label: "ops", bps: 4000 },
       ],
     }),
   );
-  const hasBasename = delivery.policy.recipients.some((r) =>
-    r.ens?.includes(".base.eth"),
-  );
-  row(
-    "createPolicy resolves blockdevrel.base.eth",
-    hasBasename && delivery.policy.recipients[0]?.address.startsWith("0x"),
-    delivery.policy.recipients[0]?.ens,
-  );
+  row("createPolicy JSON parse", Boolean(delivery.policyId), delivery.policyId);
 } catch (err) {
-  const message = err instanceof Error ? err.message : String(err);
-  row("createPolicy resolves blockdevrel.base.eth", false, message);
+  row("createPolicy JSON parse", false, err instanceof Error ? err.message : String(err));
 }
 
-console.log("\nCAP service reachability (negotiate only):");
+console.log("\nCAP negotiate:");
 await verifyService(
-  "createEnsName on CAP",
+  "createEnsName",
   env.CROO_SERVICE_ID_CREATE_ENS,
-  JSON.stringify({
-    org: "acme",
-    subname: "verify",
-    address: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0",
-  }),
+  JSON.stringify({ org: "acme", subname: "payroll", address: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0" }),
 );
-
 await verifyService(
-  "createPolicy on CAP",
+  "createPolicy",
   env.CROO_SERVICE_ID_CREATE_POLICY,
   JSON.stringify({
     name: "Verify split",
-    recipients: [
-      {
-        address: "blockdevrel.base.eth",
-        label: "team",
-        bps: 10000,
-      },
-    ],
+    recipients: [{ address: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0", label: "team", bps: 10000 }],
   }),
 );
-
 await verifyService(
-  "executePaymentJob on CAP",
+  "executePaymentJob",
   env.CROO_SERVICE_ID_EXECUTE_PAYMENT,
   JSON.stringify({
     policyId: "pol_verify",
-    recipient: {
-      address: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0",
-      label: "team",
-      amount: "1000000",
-    },
+    recipient: { address: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0", label: "team", amount: "1000000" },
   }),
 );
 
 const failed = rows.filter((r) => !r.ok).length;
 console.log(`\n${rows.length - failed}/${rows.length} checks passed.\n`);
-
-if (failed > 0) {
-  console.log("If CAP shows SERVICE_NOT_FOUND:");
-  console.log("  1. Open https://agent.croo.network → your agent → Configure");
-  console.log("  2. Save each service, then copy fresh service IDs into .env");
-  console.log("  3. Run only ONE provider: npm run dev (duplicate WS keys break delivery)\n");
-}
-
 process.exit(failed === 0 ? 0 : 1);

@@ -1,14 +1,6 @@
 /**
- * Sample user flow — hire Remifi like an orchestrator agent would:
- *   1. createPolicy  → policyId + split rules
- *   2. executePaymentJob (per recipient) → CROO sends USDC on Base
- *
- * Prereqs: npm run dev, CROO_REQUESTER_SDK_KEY funded with USDC
- *
- * Env:
- *   SAMPLE_FUND_AMOUNT=1000   total USDC to split (6 decimals; 1000 = 0.001 USDC)
- *
- * Run: npm run sample:flow
+ * Sample user flow: createPolicy → executePaymentJob per recipient.
+ * Run: npm run sample:flow  (requires npm run dev + funded requester agent)
  */
 import { config as loadEnv } from "dotenv";
 import { resolve } from "node:path";
@@ -22,14 +14,13 @@ const policyServiceId = process.env.CROO_SERVICE_ID_CREATE_POLICY?.trim();
 const executeServiceId = process.env.CROO_SERVICE_ID_EXECUTE_PAYMENT?.trim();
 const usdcAddress =
   process.env.USDC_ADDRESS ?? "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
-const totalFund = process.env.SAMPLE_FUND_AMOUNT ?? process.env.JOURNEY_FUND_AMOUNT ?? "1000";
+const totalFund = process.env.SAMPLE_FUND_AMOUNT ?? "1000";
 
-/** What a hiring agent sends to createPolicy — JSON Schema input */
 const samplePolicyRequirements = JSON.stringify({
   name: "Hackathon revenue split",
   recipients: [
     {
-      address: "blockdevrel.base.eth",
+      address: "0x59Ea18913F39187efb0Dc0d2CDB09Da5aF4dB4eD",
       label: "devrel",
       bps: 6000,
     },

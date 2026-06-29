@@ -2,42 +2,39 @@
 
 ## Overview
 
-Remifi sits between **CROO CAP** (commerce / hiring) and **Base** (USDC settlement).
+Remifi sits between **CROO CAP** (commerce / hiring) and **Base** (USDC settlement + Base Names).
 
 ## Components
 
 | Path | Role |
 |------|------|
 | `src/cap/server.ts` | CAP SDK bootstrap, WebSocket, order listeners |
-| `src/cap/handlers.ts` | `createPolicy`, `executePaymentJob` |
-| `src/policy/interpreter.ts` | Natural language or JSON → `SplitPolicy` |
-| `src/chain/client.ts` | viem clients for Base |
-| `src/chain/router.ts` | Compute amounts from bps; USDC transfers |
-| `web/app/page.tsx` | Demo: policy input, split preview, BaseScan links |
+| `src/cap/handlers.ts` | Route paid orders to policy / ENS / settlement |
+| `src/policy/interpreter.ts` | JSON or natural language → `SplitPolicy` |
+| `src/policy/ens-*.ts` | Base Names registration and subnames |
+| `src/chain/croo-settlement.ts` | `executePaymentJob` delivery from CROO `payTxHash` |
 
-## SplitPolicy
+## Settlement model
 
-```typescript
-type SplitRecipient = { address: `0x${string}`; label: string; bps: number };
-type SplitPolicy = {
-  id: string;
-  name: string;
-  recipients: SplitRecipient[]; // bps sum = 10000
-};
-```
+| Service | Who moves USDC |
+|---------|----------------|
+| `createPolicy` | None (schema only) |
+| `createEnsName` | None (ENS txs use operator ETH) |
+| `executePaymentJob` | **CROO** via `payOrder` → `recipient.address` set at accept |
 
-## Order flow (CAP)
+No provider private key signs USDC transfers for payouts.
+
+## Order flow
 
 ```
-NegotiateOrder → AcceptNegotiation → PayOrder (USDC escrow)
-→ order_paid → Remifi executes split → DeliverOrder (tx proof)
+NegotiateOrder → AcceptNegotiation → PayOrder (USDC)
+→ order_paid → Remifi executes → DeliverOrder (Schema JSON)
 → order_completed
 ```
 
-## MVP vs Phase 2
+`executePaymentJob` uses `AcceptNegotiationWithFundAddress(recipient)`.
 
-| MVP | Phase 2 (optional) |
-|-----|-------------------|
-| USDC transfer from agent AA wallet | `PaymentRouter.sol` on Base |
-| Policies stored off-chain / in delivery | On-chain `PolicyRegistry` |
-| ENS as demo identity | ENS resolver integration |
+## Phase 2 (not in MVP)
+
+- On-chain `PolicyRegistry` / `PaymentRouter` contracts
+- Recurring payment schedules

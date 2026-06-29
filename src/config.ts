@@ -32,7 +32,6 @@ const envSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().optional(),
   ENS_ORG_DOMAIN: z.string().optional(),
-  ENS_PARENT_DOMAIN: z.string().optional(),
   ENS_REGISTRAR_PRIVATE_KEY: z
     .string()
     .optional()

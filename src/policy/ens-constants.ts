@@ -6,5 +6,3 @@ export const BASE_L2_RESOLVER =
   "0x426fA03fB86E510d0Dd9F70335Cf102a98b10875" as const;
 
 export const SECONDS_PER_YEAR = 31_536_000n;
-
-export const DEFAULT_ORG_DOMAIN = "remifi.base.eth";

@@ -1,8 +1,5 @@
-/**
- * Validates .env before smoke tests. Run: npm run setup:check
- */
+/** Validate .env. Run: npm run setup:check */
 import { config as loadEnv } from "dotenv";
-import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(process.cwd());
@@ -74,31 +71,9 @@ for (const c of checks) {
 
 console.log(`\n${ready}/${checks.length} checks passed.\n`);
 
-const canCreatePolicyLocal =
-  checks.find((c) => c.label.startsWith("CROO_SDK_KEY"))?.ok &&
-  checks.find((c) => c.label.startsWith("CROO_SERVICE_ID_CREATE"))?.ok;
-
-const canCreatePolicyE2e =
-  canCreatePolicyLocal &&
-  checks.find((c) => c.label.startsWith("CROO_REQUESTER"))?.ok;
-
-const canExecutePayment = checks.find((c) => c.label.startsWith("CROO_REQUESTER"))?.ok;
-
 console.log("Next steps:");
-console.log(`  ENS forward/reverse:             npm run test:ens`);
-console.log(`  JSON policy parse (no network):  npm run test:policy`);
-console.log(`  Full A2A journey (auto-chain):   npm run test:full-journey`);
-console.log(`  Agent + CAP service check:       npm run verify:agent`);
-if (canCreatePolicyE2e) {
-  console.log(`  CAP createPolicy E2E:            npm run dev + npm run test:create-policy`);
-} else {
-  console.log(`  CAP createPolicy E2E:            register 2nd agent + fund USDC + set requester env`);
-}
-if (canExecutePayment) {
-  console.log(`  CAP executePaymentJob E2E:       npm run test:execute-payment`);
-} else {
-  console.log(`  CAP executePaymentJob E2E:       register 2nd agent + fund USDC`);
-}
+console.log(`  npm run verify:agent`);
+console.log(`  npm run dev && npm run sample:flow   # E2E (needs funded requester agent)`);
 console.log("");
 
 process.exit(ready === checks.length ? 0 : 1);

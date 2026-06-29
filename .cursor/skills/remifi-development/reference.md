@@ -6,67 +6,47 @@
 Hiring Agent (CAP / Agent Store)
         │
         ▼
-CROO CAP — negotiate → pay → escrow (CAPVault)
+CROO CAP — negotiate → pay → USDC to recipient (executePaymentJob)
         │
         ▼
-Remifi agent server (Node)
+Remifi provider (Node)
   ├── cap/handlers.ts
-  ├── policy/interpreter.ts
-  └── chain/router.ts
+  ├── policy/interpreter.ts + ens-*.ts
+  └── chain/croo-settlement.ts
         │
         ▼
-Base — USDC.transfer() × N recipients
+Base — USDC settlement + Base Names (*.base.eth)
 ```
 
 ## File responsibilities
 
-| File | Responsibility |
+| Path | Responsibility |
 |------|----------------|
-| `agent/src/index.ts` | Boot config, start CAP provider |
-| `agent/src/config.ts` | Env validation, Base RPC, USDC address |
-| `agent/src/cap/server.ts` | SDK init, WebSocket, order listeners |
-| `agent/src/cap/handlers.ts` | Route orders to policy + chain logic |
-| `agent/src/policy/interpreter.ts` | NL/JSON → `SplitPolicy` |
-| `agent/src/chain/client.ts` | viem public + wallet clients (AA wallet signer) |
-| `agent/src/chain/router.ts` | Compute amounts from bps, execute transfers |
-| `web/app/page.tsx` | Policy form, split preview, BaseScan links |
-| `docs/CAP_INTEGRATION.md` | SDK methods, env vars, order lifecycle |
+| `src/index.ts` | Boot, health server, CAP provider |
+| `src/config.ts` | Env validation |
+| `src/cap/server.ts` | WebSocket, order listeners |
+| `src/cap/handlers.ts` | createEnsName, createPolicy, executePaymentJob |
+| `src/policy/interpreter.ts` | NL/JSON → SplitPolicy |
+| `src/chain/croo-settlement.ts` | Execute delivery from CROO payTxHash |
+| `docs/CAP_INTEGRATION.md` | SDK flow, payloads |
 
 ## Env vars
 
 ```bash
-# CAP (required)
-CROO_API_URL=https://api.croo.network
-CROO_WS_URL=wss://api.croo.network/ws
 CROO_SDK_KEY=croo_sk_...
-
-# Base (required for splits)
-BASE_RPC_URL=
-USDC_ADDRESS=          # Base mainnet or Sepolia USDC
-
-# AI policy (one of)
-ANTHROPIC_API_KEY=
-OPENAI_API_KEY=
-
-# Optional Phase 2 contracts
-POLICY_REGISTRY_ADDRESS=
-PAYMENT_ROUTER_ADDRESS=
+CROO_SERVICE_ID_CREATE_POLICY=
+CROO_SERVICE_ID_CREATE_ENS=
+CROO_SERVICE_ID_EXECUTE_PAYMENT=
+ENS_REGISTRAR_PRIVATE_KEY=    # Base ETH for ENS gas
+ANTHROPIC_API_KEY=            # optional NL createPolicy
+BASE_RPC_URL=https://mainnet.base.org
+USDC_ADDRESS=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
 ```
 
-## Base USDC addresses (verify before deploy)
+## Base USDC
 
-- Base Mainnet USDC: `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
-- Base Sepolia USDC: check [Base docs](https://docs.base.org) — use testnet for dev
+- Mainnet: `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
 
-## Partner integration (A2A)
+## A2A / anti-sybil
 
-Priority: real cross-team agents (CAProxy, Pygmalion) > disclosed mock agents.
-
-Anti-sybil: aim for ≥3 unique counterparty agents, ≥5 buyer wallets. Never fake partnerships.
-
-## Phase 2 contracts (optional)
-
-Add only after MVP CAP flow works end-to-end:
-
-- `PaymentRouter.sol` — single contract, split + emit event
-- Skip `PolicyRegistry` + ENS on-chain for hackathon unless extra time
+≥3 counterparty agents, ≥5 buyer wallets for prize eligibility. Disclose test agents in README.
