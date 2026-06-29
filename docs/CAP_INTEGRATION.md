@@ -6,7 +6,7 @@ Remifi is a **CAP provider** using [@croo-network/sdk](https://docs.croo.network
 
 1. [agent.croo.network](https://agent.croo.network) → Register Agent → copy `CROO_SDK_KEY`
 2. Configure three services (see [setup.md](../setup.md))
-3. Fund **requester** AA wallet with USDC for E2E tests
+3. Fund agent AA wallet with USDC for service fees and payouts
 
 ## Environment
 
@@ -75,7 +75,7 @@ At accept, Remifi sets `providerFundAddress` = `recipient.address`. CROO routes 
 }
 ```
 
-Multi-recipient splits = **one CAP hire per recipient** (see `npm run sample:flow`).
+Multi-recipient splits = **one CAP hire per recipient**.
 
 ## SDK flow
 

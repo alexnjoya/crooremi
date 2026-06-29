@@ -9,11 +9,7 @@
     "start": "node dist/index.js",
     "build": "tsc",
     "build:prod": "npm run typecheck && npm run build",
-    "typecheck": "tsc --noEmit",
-    "setup:check": "tsx scripts/setup-check.ts",
-    "verify:agent": "tsx scripts/verify-agent.ts",
-    "sample:flow": "tsx scripts/sample-user-flow.ts",
-    "railway:env": "tsx scripts/push-railway-env.ts"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@croo-network/sdk": "^0.2.1",

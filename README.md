@@ -24,14 +24,7 @@ Settlement: USDC on Base via CAP (CROO direct — no provider signing key for pa
 ```bash
 cp .env.example .env   # fill CROO keys + service IDs
 npm install
-npm run setup:check
 npm run dev            # provider Online on Agent Store
-```
-
-E2E demo (second funded requester agent required):
-
-```bash
-npm run sample:flow    # createPolicy → execute payouts (minimal USDC)
 ```
 
 Full setup: [setup.md](./setup.md) · CAP details: [docs/CAP_INTEGRATION.md](./docs/CAP_INTEGRATION.md)
@@ -48,7 +41,6 @@ Full setup: [setup.md](./setup.md) · CAP details: [docs/CAP_INTEGRATION.md](./d
 | `CROO_SERVICE_ID_EXECUTE_PAYMENT` | Yes | Agent Store service ID |
 | `ENS_REGISTRAR_PRIVATE_KEY` | ENS services | Operator wallet — Base ETH for name gas |
 | `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` | NL policy | Natural-language `createPolicy` |
-| `CROO_REQUESTER_SDK_KEY` | E2E only | Second agent for integration tests |
 | `BASE_RPC_URL` | Optional | Default: `https://mainnet.base.org` |
 | `USDC_ADDRESS` | Optional | Default: Base mainnet USDC |
 
@@ -68,18 +60,6 @@ curl https://<your-host>/health   # { "ok": true, "provider": "online" }
 ```
 
 `NODE_ENV=production` validates: all three service IDs, `ENS_REGISTRAR_PRIVATE_KEY`, mocks disabled.
-
----
-
-## Scripts
-
-| Command | Purpose |
-|---------|---------|
-| `npm run setup:check` | Validate `.env` |
-| `npm run verify:agent` | CAP service IDs + local policy smoke |
-| `npm run sample:flow` | E2E: createPolicy → execute payouts (optional demo) |
-
-`sample:flow` needs a second funded CROO agent (`CROO_REQUESTER_SDK_KEY`).
 
 ---
 
@@ -104,7 +84,7 @@ createEnsName / createPolicy: operator wallet for Base Names gas only
 | # | Requirement | Status |
 |---|-------------|--------|
 | 1 | Listed on [Agent Store](https://agent.croo.network) | ☐ deploy + Online |
-| 2 | CAP + on-chain USDC on Base | ☑ `sample:flow` proven |
+| 2 | CAP + on-chain USDC on Base | ☑ provider deployed |
 | 3 | Open source MIT | ☑ |
 | 4 | Demo video + README | ☐ |
 | 5 | [DoraHacks BUIDL](https://dorahacks.io/hackathon/croo-hackathon/detail) | ☐ |
