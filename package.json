@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "setup:check": "tsx scripts/setup-check.ts",
     "verify:agent": "tsx scripts/verify-agent.ts",
-    "sample:flow": "tsx scripts/sample-user-flow.ts"
+    "sample:flow": "tsx scripts/sample-user-flow.ts",
+    "railway:env": "tsx scripts/push-railway-env.ts"
   },
   "dependencies": {
     "@croo-network/sdk": "^0.2.1",

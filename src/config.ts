@@ -51,13 +51,26 @@ const envSchema = z.object({
 
 export type Env = z.infer<typeof envSchema>;
 
+function deploymentEnvHints(): string {
+  if (process.env.CROO_SDK_KEY?.trim()) return "";
+
+  const lines = [
+    "",
+    "Deployment hint: local .env is not copied into Docker/Railway images.",
+    "Set CROO_SDK_KEY (and other vars from .env.example) in your host env:",
+    "  Railway → Service → Variables → Raw Editor (paste .env contents)",
+    "  Or: npx @railway/cli login && npx @railway/cli link && npm run railway:env",
+  ];
+  return lines.join("\n");
+}
+
 function parseEnv(): Env {
   const parsed = envSchema.safeParse(process.env);
   if (!parsed.success) {
     const message = parsed.error.issues
       .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
       .join("\n");
-    throw new Error(`Invalid environment:\n${message}`);
+    throw new Error(`Invalid environment:\n${message}${deploymentEnvHints()}`);
   }
   return parsed.data;
 }
