@@ -33,6 +33,12 @@ export type EnsLookupResult = {
 export type EnsResolveDelivery = {
   success: boolean;
   results: EnsLookupResult[];
+  /** Set when the buyer sent a single name or address. */
+  input?: string;
+  direction?: EnsResolveDirection;
+  name?: string;
+  address?: string;
+  chain?: EnsResolveChain;
 };
 
 type NormalizedQuery = {
@@ -53,7 +59,41 @@ function isBasename(value: string): boolean {
 }
 
 function isEnsName(value: string): boolean {
-  return value.includes(".") && !isHexAddress(value);
+  const v = value.trim().toLowerCase();
+  return v.endsWith(".eth") || (v.includes(".") && !isHexAddress(v));
+}
+
+function queryFromPlainText(value: string): NormalizedQuery[] {
+  const v = value.trim();
+  if (!v) {
+    throw new Error("ENS lookup cannot be empty");
+  }
+  if (isHexAddress(v)) {
+    return [{ direction: "reverse", value: normalizeHexAddress(v) }];
+  }
+  if (isEnsName(v)) {
+    return [{ direction: "forward", value: v }];
+  }
+  throw new Error(
+    "Enter an ENS name like blockdevrel.base.eth or vitalik.eth, or a 0x address",
+  );
+}
+
+function unwrapTextPayload(asJson: unknown): string | null {
+  if (typeof asJson === "string") {
+    const trimmed = asJson.trim();
+    return trimmed || null;
+  }
+  if (!asJson || typeof asJson !== "object" || Array.isArray(asJson)) {
+    return null;
+  }
+  for (const key of ["text", "input", "query", "name", "address"] as const) {
+    const value = (asJson as Record<string, unknown>)[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return null;
 }
 
 function tryParseJson(raw: string): unknown {
@@ -87,6 +127,9 @@ const queryItemSchema = z
   });
 
 const requirementsSchema = z.object({
+  text: z.string().min(1).optional(),
+  input: z.string().min(1).optional(),
+  query: z.string().min(1).optional(),
   queries: z.union([z.array(queryItemSchema), z.string()]).optional(),
   name: z.string().min(1).optional(),
   address: z.string().min(1).optional(),
@@ -102,24 +145,33 @@ export function parseEnsResolveQueries(requirements: string): NormalizedQuery[] 
 
   const asJson = tryParseJson(trimmed);
   if (asJson === null) {
-    if (isEnsName(trimmed)) {
-      return [{ direction: "forward", value: trimmed }];
-    }
-    if (isHexAddress(trimmed)) {
-      return [{ direction: "reverse", value: normalizeHexAddress(trimmed) }];
-    }
-    throw new Error("ENS resolver requires Schema JSON input");
+    return queryFromPlainText(trimmed);
+  }
+
+  const plain = unwrapTextPayload(asJson);
+  if (plain) {
+    return queryFromPlainText(plain);
   }
 
   const parsed = requirementsSchema.safeParse(asJson);
   if (!parsed.success) {
     throw new Error(
-      "ENS resolver requires queries, name, address, forward, or reverse",
+      "Enter an ENS name like blockdevrel.base.eth or vitalik.eth, or a 0x address",
     );
   }
 
   const input = parsed.data;
   const queries: NormalizedQuery[] = [];
+
+  if (input.text) {
+    queries.push(...queryFromPlainText(input.text));
+  }
+  if (input.input) {
+    queries.push(...queryFromPlainText(input.input));
+  }
+  if (input.query) {
+    queries.push(...queryFromPlainText(input.query));
+  }
 
   const queryItems = Array.isArray(input.queries)
     ? input.queries
@@ -165,7 +217,7 @@ export function parseEnsResolveQueries(requirements: string): NormalizedQuery[] 
 
   if (queries.length === 0) {
     throw new Error(
-      "ENS resolver requires queries, name, address, forward, or reverse",
+      "Enter an ENS name like blockdevrel.base.eth or vitalik.eth, or a 0x address",
     );
   }
 
@@ -343,5 +395,14 @@ export async function resolveEnsFromRequirements(
   return {
     success: results.every((row) => row.resolved),
     results,
+    ...(results.length === 1
+      ? {
+          input: results[0]!.input,
+          direction: results[0]!.direction,
+          ...(results[0]!.name ? { name: results[0]!.name } : {}),
+          ...(results[0]!.address ? { address: results[0]!.address } : {}),
+          chain: results[0]!.chain,
+        }
+      : {}),
   };
 }

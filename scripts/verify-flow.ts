@@ -204,6 +204,24 @@ async function testEnsResolveParsing(): Promise<void> {
   assert.equal(queries[0]?.direction, "forward");
   assert.equal(queries[2]?.direction, "reverse");
   ok("ENS resolver parses queries array from requirements");
+
+  const fromText = parseEnsResolveQueries(
+    JSON.stringify({ text: "blockdevrel.base.eth" }),
+  );
+  assert.equal(fromText.length, 1);
+  assert.equal(fromText[0]?.direction, "forward");
+  assert.equal(fromText[0]?.value, "blockdevrel.base.eth");
+  ok("ENS resolver accepts { text: \"name.base.eth\" }");
+
+  const fromAddress = parseEnsResolveQueries(
+    JSON.stringify({ text: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045" }),
+  );
+  assert.equal(fromAddress[0]?.direction, "reverse");
+  ok("ENS resolver accepts { text: \"0x...\" } for reverse lookup");
+
+  const plain = parseEnsResolveQueries("vitalik.eth");
+  assert.equal(plain[0]?.direction, "forward");
+  ok("ENS resolver accepts plain text name");
 }
 
 async function main(): Promise<void> {
