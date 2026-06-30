@@ -37,6 +37,22 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((value) => (value && value.trim() !== "" ? value : undefined)),
+  PROVIDER_PAYOUT_PRIVATE_KEY: z
+    .string()
+    .optional()
+    .transform((value) => (value && value.trim() !== "" ? value : undefined)),
+  ROUTER_ADDRESS: z
+    .string()
+    .optional()
+    .transform((value) => (value && value.trim() !== "" ? value.trim() : undefined)),
+  ROUTER_EXECUTOR_ADDRESS: z
+    .string()
+    .optional()
+    .transform((value) => (value && value.trim() !== "" ? value.trim() : undefined)),
+  DEV_MOCK_PAYROLL_SETTLEMENT: z
+    .string()
+    .optional()
+    .transform((value) => value === "true" || value === "1"),
   DEV_MOCK_ENS_SUBNAMES: z
     .string()
     .optional()

@@ -1,4 +1,5 @@
 import { startProvider } from "./cap/server.js";
+import { validateRouterDeployment } from "./chain/router.js";
 import { startHealthServer } from "./health.js";
 import { closePolicyDatabase, initPolicyDatabase } from "./policy/database.js";
 import { registerProcessHandlers, validateStartup } from "./startup.js";
@@ -19,6 +20,13 @@ async function main(): Promise<void> {
     await initPolicyDatabase();
   } catch (err) {
     console.error("[remifi] database init failed:", err);
+    process.exit(1);
+  }
+
+  try {
+    await validateRouterDeployment();
+  } catch (err) {
+    console.error("[remifi] router validation failed:", err);
     process.exit(1);
   }
 

@@ -150,6 +150,8 @@ export type ExecutePaymentDelivery = {
   policyId: string;
   totalUsdc: string;
   fundTxHash: string;
+  /** Router executeSplit tx when settlement is router_payroll. */
+  splitTxHash?: string;
   /** CROO deliverOrder tx — also on `order.deliverTxHash` after completion. */
   deliverTxHash?: string;
   txHashes: string[];
@@ -160,5 +162,5 @@ export type ExecutePaymentDelivery = {
     txHash?: string;
   }>;
   baseExplorer: string;
-  settlement: "croo_payroll";
+  settlement: "router_payroll" | "wallet_payroll" | "mock_payroll" | "croo_payroll";
 };

@@ -43,8 +43,8 @@ export function buildExecutionGuide(
       recipientCount: recipients.length,
       recipients,
       note:
-        "Hire USDC Split Execution once with this JSON. Set fund amount to payroll.fundAmount " +
-        "and fund token to Base USDC. CROO SDK payOrder funds the provider AA wallet; deliverOrder completes payroll.",
+        "Hire USDC Split Execution once. Set fund amount to payroll.fundAmount " +
+        "and fund token to Base USDC. After payOrder, Remifi transfers USDC to each recipient on Base.",
     },
     ...(delivery.remainderBps > 0 ? { remainderBps: delivery.remainderBps } : {}),
   };

@@ -5,7 +5,7 @@ import {
   type Order,
 } from "@croo-network/sdk";
 import { isCreateEnsService, isCreatePolicyService, isExecutePaymentService, isResolveEnsService } from "../config.js";
-import { buildPayrollDelivery } from "../chain/payroll-settlement.js";
+import { executePayrollSettlement } from "../chain/payroll-settlement.js";
 import { createEnsFromRequirements } from "../policy/ens-service.js";
 import { attachEnsJourneyGuide, attachPolicyJourneyGuide } from "../policy/journey-guide.js";
 import { interpretPolicyFromRequirements } from "../policy/interpreter.js";
@@ -78,8 +78,13 @@ async function handleResolveEnsName(ctx: HandlerContext): Promise<void> {
 }
 
 async function handleExecutePayment(ctx: HandlerContext): Promise<void> {
-  const plan = await parseExecutePayrollPlan(ctx.negotiation.requirements);
-  const delivery = buildPayrollDelivery(ctx.order, plan);
+  const plan = await parseExecutePayrollPlan(ctx.negotiation.requirements, {
+    client: ctx.client,
+    requesterAgentId: ctx.negotiation.requesterAgentId,
+    fundAmount: ctx.order.fundAmount ?? ctx.negotiation.fundAmount,
+    orderCreatedAt: ctx.order.createdTime ?? ctx.negotiation.createdTime,
+  });
+  const delivery = await executePayrollSettlement(ctx.order, plan);
   const deliverTxHash = await deliverSchema(ctx.client, ctx.orderId, delivery);
 
   log("info", `executePaymentJob payroll delivered ${delivery.policyId}`, {

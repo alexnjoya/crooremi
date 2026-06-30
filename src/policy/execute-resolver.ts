@@ -1,8 +1,12 @@
 import type { AgentClient } from "@croo-network/sdk";
-import { getProviderAaWalletAddress } from "../chain/provider-wallet.js";
+import { env } from "../config.js";
+import { getProviderFundAddress } from "../chain/provider-wallet.js";
 import { buildExecuteBatchPlan, executeBatchSchema } from "./execute-batch.js";
 import { DEFAULT_GUIDE_TOTAL_USDC } from "./execution-guide.js";
 import { interpretExecutePayrollText } from "./llm.js";
+import { resolvePolicyIdFromRequester } from "./policy-lookup.js";
+import { loadLatestPolicy } from "./store.js";
+import { parseAgentStoreExecuteRequirements } from "./store-requirements.js";
 import {
   hasLlmKeys,
   llmRequiredError,
@@ -12,6 +16,13 @@ import {
 import type { ExecuteBatchInput, ExecuteBatchPlan } from "./types.js";
 
 const POLICY_ID_RE = /pol_[a-f0-9]+/i;
+
+export type ExecuteParseContext = {
+  client?: AgentClient;
+  requesterAgentId?: string;
+  fundAmount?: string;
+  orderCreatedAt?: string;
+};
 
 function normalizePolicyId(value: string): string | null {
   const trimmed = value.trim();
@@ -55,29 +66,106 @@ function extractExecuteInput(text: string): ExecuteBatchInput | null {
   };
 }
 
+async function resolveMissingPolicyId(
+  ctx: ExecuteParseContext | undefined,
+): Promise<string | null> {
+  const serviceId = env.CROO_SERVICE_ID_CREATE_POLICY?.trim();
+  if (ctx?.client && ctx.requesterAgentId && serviceId) {
+    const fromRequester = await resolvePolicyIdFromRequester(
+      ctx.client,
+      ctx.requesterAgentId,
+      serviceId,
+      ctx.orderCreatedAt,
+    );
+    if (fromRequester) {
+      console.log(
+        `[remifi] execute: resolved policyId ${fromRequester} from requester createPolicy history`,
+      );
+      return fromRequester;
+    }
+  }
+
+  const latest = await loadLatestPolicy();
+  if (latest) {
+    console.log(
+      `[remifi] execute: resolved policyId ${latest.policyId} from latest stored policy`,
+    );
+    return latest.policyId;
+  }
+
+  return null;
+}
+
+async function finalizeExecuteInput(
+  partial: Partial<ExecuteBatchInput>,
+  ctx?: ExecuteParseContext,
+): Promise<ExecuteBatchInput> {
+  let policyId = partial.policyId
+    ? normalizePolicyId(partial.policyId)
+    : null;
+  if (!policyId) {
+    policyId = await resolveMissingPolicyId(ctx);
+  }
+  if (!policyId) {
+    throw new Error(
+      'Could not resolve policyId. Hire USDC Split Policy first, or send { "policyId": "pol_...", "totalUsdc": "1000000" }.',
+    );
+  }
+
+  return {
+    policyId,
+    totalUsdc: partial.totalUsdc ?? ctx?.fundAmount ?? DEFAULT_GUIDE_TOTAL_USDC,
+    ...(partial.policy ? { policy: partial.policy } : {}),
+  };
+}
+
 async function buildFromLlmDraft(
   text: string,
   fallbackSource: string,
+  ctx?: ExecuteParseContext,
 ): Promise<ExecuteBatchPlan> {
   const draft = await interpretExecutePayrollText(text);
   let policyId = normalizePolicyId(draft.policyId);
   if (!policyId) {
     policyId = extractPolicyIdFromText(fallbackSource);
   }
-  if (!policyId) {
-    throw new Error(
-      'Could not resolve policyId. Use Schema requirements: { "policyId": "pol_...", "totalUsdc": "1000000" }.',
-    );
+
+  const input = await finalizeExecuteInput(
+    {
+      ...(policyId ? { policyId } : {}),
+      totalUsdc: draft.totalUsdc,
+    },
+    ctx,
+  );
+
+  return buildExecuteBatchPlan(input);
+}
+
+async function buildFromStoreJson(
+  asJson: unknown,
+  ctx?: ExecuteParseContext,
+): Promise<ExecuteBatchPlan | null> {
+  const storePartial = parseAgentStoreExecuteRequirements(asJson, {
+    fundAmount: ctx?.fundAmount,
+  });
+  if (!storePartial) {
+    return null;
   }
 
-  return buildExecuteBatchPlan({
-    policyId,
-    totalUsdc: draft.totalUsdc,
-  });
+  const batch = executeBatchSchema.safeParse(asJson);
+  const input = await finalizeExecuteInput(
+    {
+      ...storePartial,
+      ...(batch.success ? (batch.data as ExecuteBatchInput) : {}),
+    },
+    ctx,
+  );
+  return buildExecuteBatchPlan(input);
 }
 
 export async function parseExecutePayrollPlan(
   requirements: string,
+  ctx?: ExecuteParseContext,
 ): Promise<ExecuteBatchPlan> {
   const trimmed = requirements.trim();
   if (!trimmed) {
@@ -89,42 +177,49 @@ export async function parseExecutePayrollPlan(
   if (asJson === null) {
     const extracted = extractExecuteInput(trimmed);
     if (extracted) {
-      return buildExecuteBatchPlan(extracted);
+      return buildExecuteBatchPlan(await finalizeExecuteInput(extracted, ctx));
     }
     if (!hasLlmKeys()) {
       throw new Error(
-        `${llmRequiredError("executePaymentJob")} Expected { "policyId": "pol_...", "totalUsdc": "1000000" }.`,
+        `${llmRequiredError("executePaymentJob")} Expected { "policyId": "pol_...", "totalUsdc": "1000000" } or Agent Store principal_amount.`,
       );
     }
-    return buildFromLlmDraft(trimmed, trimmed);
+    return buildFromLlmDraft(trimmed, trimmed, ctx);
+  }
+
+  const fromStore = await buildFromStoreJson(asJson, ctx);
+  if (fromStore) {
+    return fromStore;
   }
 
   const naturalLanguage = unwrapNaturalLanguage(asJson);
   if (naturalLanguage !== null) {
     const extracted = extractExecuteInput(naturalLanguage);
     if (extracted) {
-      return buildExecuteBatchPlan(extracted);
+      return buildExecuteBatchPlan(await finalizeExecuteInput(extracted, ctx));
     }
     if (!hasLlmKeys()) {
       throw new Error(
         `${llmRequiredError("executePaymentJob")} Expected { "policyId": "pol_...", "totalUsdc": "1000000" }.`,
       );
     }
-    return buildFromLlmDraft(naturalLanguage, trimmed);
+    return buildFromLlmDraft(naturalLanguage, trimmed, ctx);
   }
 
   const batch = executeBatchSchema.safeParse(asJson);
   if (batch.success) {
-    return buildExecuteBatchPlan(batch.data as ExecuteBatchInput);
+    return buildExecuteBatchPlan(
+      await finalizeExecuteInput(batch.data as ExecuteBatchInput, ctx),
+    );
   }
 
   const extracted = extractExecuteInput(trimmed);
   if (extracted) {
-    return buildExecuteBatchPlan(extracted);
+    return buildExecuteBatchPlan(await finalizeExecuteInput(extracted, ctx));
   }
 
   if (hasLlmKeys()) {
-    return buildFromLlmDraft(trimmed, trimmed);
+    return buildFromLlmDraft(trimmed, trimmed, ctx);
   }
 
   throw new Error(
@@ -137,5 +232,5 @@ export async function resolveExecuteFundAddress(
   client: AgentClient,
   _requirements: string,
 ): Promise<`0x${string}`> {
-  return getProviderAaWalletAddress(client);
+  return getProviderFundAddress(client);
 }

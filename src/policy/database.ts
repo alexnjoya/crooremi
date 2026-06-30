@@ -77,6 +77,22 @@ export async function loadPolicyFromDatabase(
   return result.rows[0]!.payload;
 }
 
+export async function loadLatestPolicyFromDatabase(): Promise<StoredPolicy | null> {
+  if (!ready || !pool) {
+    return null;
+  }
+
+  const result = await pool.query<{ payload: StoredPolicy }>(
+    `SELECT payload FROM remifi_policies ORDER BY created_at DESC LIMIT 1`,
+  );
+
+  if (result.rowCount === 0) {
+    return null;
+  }
+
+  return result.rows[0]!.payload;
+}
+
 export async function closePolicyDatabase(): Promise<void> {
   await pool?.end();
   pool = undefined;

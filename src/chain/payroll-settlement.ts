@@ -1,10 +1,7 @@
 import type { Order } from "@croo-network/sdk";
 import { baseExplorerTx } from "../config.js";
-import type {
-  ExecuteBatchPlan,
-  ExecutePaymentDelivery,
-  ExecutePayoutLeg,
-} from "../policy/types.js";
+import type { ExecuteBatchPlan, ExecutePaymentDelivery } from "../policy/types.js";
+import { disbursePayrollLegs } from "./payroll-disbursement.js";
 
 function assertPayrollFundTransfer(order: Order, plan: ExecuteBatchPlan): void {
   const payTxHash = order.payTxHash?.trim();
@@ -16,7 +13,7 @@ function assertPayrollFundTransfer(order: Order, plan: ExecuteBatchPlan): void {
 
   if (!order.providerFundAddress?.trim()) {
     throw new Error(
-      "Order missing providerFundAddress — fund-transfer accept must declare provider AA wallet",
+      "Order missing providerFundAddress — fund-transfer accept must declare payout wallet",
     );
   }
 
@@ -30,17 +27,16 @@ function assertPayrollFundTransfer(order: Order, plan: ExecuteBatchPlan): void {
 }
 
 /**
- * CROO SDK payroll settlement — no local wallet signing.
- *
- * 1. acceptNegotiationWithFundAddress(provider AA wallet)
- * 2. requester payOrder → fundAmount USDC lands on provider AA wallet (payTxHash)
- * 3. deliverOrder → CROO disburses from AA wallet; deliverTxHash is on-chain proof
+ * Full payroll settlement:
+ * 1. CROO payOrder → USDC on Router or payout EOA (fundTxHash)
+ * 2. executeSplit or USDC.transfer → each recipient
+ * 3. deliverOrder payload with on-chain proof
  */
-export function buildPayrollDelivery(
+export async function executePayrollSettlement(
   order: Order,
   plan: ExecuteBatchPlan,
   deliverTxHash?: string,
-): ExecutePaymentDelivery {
+): Promise<ExecutePaymentDelivery> {
   if (plan.legs.length === 0) {
     throw new Error("Payroll execution requires at least one recipient");
   }
@@ -48,34 +44,56 @@ export function buildPayrollDelivery(
   assertPayrollFundTransfer(order, plan);
 
   const fundTxHash = order.payTxHash!.trim();
-  const disbursementTxHash = deliverTxHash?.trim() || order.deliverTxHash?.trim();
+  const disbursement = await disbursePayrollLegs(order, plan);
+  const recipients = disbursement.recipients;
+  const recipientTxHashes = [...new Set(recipients.map((row) => row.txHash))];
+  const capDeliverTxHash = deliverTxHash?.trim() || order.deliverTxHash?.trim();
 
-  const recipients = plan.legs.map((leg) => toRecipientRow(leg, disbursementTxHash));
+  const txHashes = [
+    fundTxHash,
+    ...recipientTxHashes,
+    ...(capDeliverTxHash ? [capDeliverTxHash] : []),
+  ];
 
-  const txHashes = [fundTxHash, disbursementTxHash].filter(
-    (hash): hash is string => Boolean(hash),
-  );
+  const primaryProofTx =
+    disbursement.splitTxHash ?? recipientTxHashes[0] ?? fundTxHash;
 
   return {
     policyId: plan.policyId,
     totalUsdc: plan.totalUsdc,
     fundTxHash,
-    deliverTxHash: disbursementTxHash,
+    deliverTxHash: capDeliverTxHash,
+    splitTxHash: disbursement.splitTxHash,
     txHashes,
     recipients,
-    baseExplorer: baseExplorerTx(disbursementTxHash ?? fundTxHash),
-    settlement: "croo_payroll",
+    baseExplorer: baseExplorerTx(primaryProofTx),
+    settlement: disbursement.settlement,
   };
 }
 
-function toRecipientRow(
-  leg: ExecutePayoutLeg,
-  disbursementTxHash?: string,
-): ExecutePaymentDelivery["recipients"][number] {
+/** @deprecated Use executePayrollSettlement — kept for tests importing buildPayrollDelivery */
+export function buildPayrollDelivery(
+  order: Order,
+  plan: ExecuteBatchPlan,
+  deliverTxHash?: string,
+): ExecutePaymentDelivery {
+  assertPayrollFundTransfer(order, plan);
+
+  const fundTxHash = order.payTxHash!.trim();
+  const capDeliverTxHash = deliverTxHash?.trim() || order.deliverTxHash?.trim();
+
   return {
-    label: leg.recipient.label,
-    address: leg.recipient.address,
-    amount: leg.recipient.amount,
-    ...(disbursementTxHash ? { txHash: disbursementTxHash } : {}),
+    policyId: plan.policyId,
+    totalUsdc: plan.totalUsdc,
+    fundTxHash,
+    deliverTxHash: capDeliverTxHash,
+    txHashes: [fundTxHash, ...(capDeliverTxHash ? [capDeliverTxHash] : [])],
+    recipients: plan.legs.map((leg) => ({
+      label: leg.recipient.label,
+      address: leg.recipient.address,
+      amount: leg.recipient.amount,
+    })),
+    baseExplorer: baseExplorerTx(capDeliverTxHash ?? fundTxHash),
+    settlement: "croo_payroll",
   };
 }

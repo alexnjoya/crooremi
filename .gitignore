@@ -28,6 +28,9 @@ out/
 
 # Hardhat / Foundry (contracts/)
 contracts/cache/
+contracts/out/
+contracts/lib/
+contracts/broadcast/
 contracts/artifacts/
 contracts/typechain-types/
 contracts/coverage/

@@ -28,6 +28,12 @@ const PRODUCTION_REQUIRED: RequiredInProd[] = [
   },
 ];
 
+function hasPayoutSigningKey(): boolean {
+  return Boolean(
+    env.PROVIDER_PAYOUT_PRIVATE_KEY?.trim() || env.ENS_REGISTRAR_PRIVATE_KEY?.trim(),
+  );
+}
+
 export function validateStartup(): void {
   if (env.NODE_ENV !== "production") {
     console.log(`[remifi] starting in ${env.NODE_ENV} mode`);
@@ -55,6 +61,18 @@ export function validateStartup(): void {
     errors.push(
       "ANTHROPIC_API_KEY or OPENAI_API_KEY is required (LangChain smart parsing on all services)",
     );
+  }
+
+  if (!hasPayoutSigningKey()) {
+    errors.push(
+      "PROVIDER_PAYOUT_PRIVATE_KEY (or ENS_REGISTRAR_PRIVATE_KEY) is required to call Router / sign payouts",
+    );
+  }
+
+  if (env.ROUTER_ADDRESS && !env.DEV_MOCK_PAYROLL_SETTLEMENT) {
+    if (!env.ROUTER_ADDRESS.match(/^0x[a-fA-F0-9]{40}$/)) {
+      errors.push("ROUTER_ADDRESS must be a valid 0x address");
+    }
   }
 
   if (errors.length > 0) {

@@ -9,6 +9,7 @@ import { config as loadEnv } from "dotenv";
 loadEnv({ path: resolve(process.cwd(), ".env"), override: false });
 process.env.CROO_SDK_KEY ??= "croo_sk_verify_flow_test_key_placeholder_00";
 process.env.DEV_MOCK_ENS_SUBNAMES = "true";
+process.env.DEV_MOCK_PAYROLL_SETTLEMENT = "true";
 
 const { initPolicyDatabase } = await import("../src/policy/database.js");
 
@@ -108,6 +109,29 @@ async function testExecutePayrollPlan(policyId: string): Promise<void> {
   });
   assert.equal(fromStore.legs.length, 2);
   ok("buildExecuteBatchPlan loads policy from store");
+}
+
+async function testPayrollDisbursement(policyId: string): Promise<void> {
+  const plan = await buildExecuteBatchPlan({
+    policyId,
+    totalUsdc: "1000000",
+  });
+  const { executePayrollSettlement } = await import("../src/chain/payroll-settlement.js");
+
+  const delivery = await executePayrollSettlement(
+    {
+      payTxHash: `0x${"a".repeat(64)}`,
+      providerFundAddress: `0x${"b".repeat(40)}`,
+      fundAmount: plan.fundAmount,
+    } as import("@croo-network/sdk").Order,
+    plan,
+  );
+
+  assert.equal(delivery.settlement, "mock_payroll");
+  assert.equal(delivery.recipients.length, 2);
+  assert.ok(delivery.recipients[0]?.txHash?.startsWith("0x"));
+  assert.equal(delivery.recipients[0]!.amount, "300000");
+  ok("executePayrollSettlement disburses each leg (mock) with txHashes");
 }
 
 function testEnsJourneyGuide(): void {
@@ -213,6 +237,7 @@ async function main(): Promise<void> {
 
   const policyId = await testPolicyCreationAndStore();
   await testExecutePayrollPlan(policyId);
+  await testPayrollDisbursement(policyId);
   testEnsJourneyGuide();
   testEnsResolveParsing();
   await testNlJsonUnwrap();
