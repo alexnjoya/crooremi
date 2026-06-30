@@ -19,9 +19,11 @@ const envSchema = z.object({
   CROO_SERVICE_ID_CREATE_POLICY: z.string().optional(),
   CROO_SERVICE_ID_EXECUTE_PAYMENT: z.string().optional(),
   CROO_SERVICE_ID_CREATE_ENS: z.string().optional(),
+  CROO_SERVICE_ID_RESOLVE_ENS: z.string().optional(),
   CROO_REQUESTER_SDK_KEY: z.string().optional(),
   CROO_TARGET_SERVICE_ID: z.string().optional(),
   BASE_RPC_URL: z.string().url().default("https://mainnet.base.org"),
+  ETH_RPC_URL: z.string().url().default("https://ethereum.publicnode.com"),
   BASE_CHAIN_ID: z.coerce.number().default(8453),
   USDC_ADDRESS: z
     .string()
@@ -86,6 +88,13 @@ export function isCreatePolicyService(serviceId: string): boolean {
   return Boolean(
     env.CROO_SERVICE_ID_CREATE_POLICY &&
       serviceId === env.CROO_SERVICE_ID_CREATE_POLICY,
+  );
+}
+
+export function isResolveEnsService(serviceId: string): boolean {
+  return Boolean(
+    env.CROO_SERVICE_ID_RESOLVE_ENS &&
+      serviceId === env.CROO_SERVICE_ID_RESOLVE_ENS,
   );
 }
 

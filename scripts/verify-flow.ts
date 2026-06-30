@@ -16,6 +16,7 @@ const {
   interpretPolicyFromRequirements,
 } = await import("../src/policy/interpreter.js");
 const { parseExecutePayoutLeg } = await import("../src/policy/execute-resolver.js");
+const { parseEnsResolveQueries } = await import("../src/policy/ens-resolve.js");
 const { savePolicy, loadPolicy, toStoredPolicy } = await import("../src/policy/store.js");
 const {
   attachEnsJourneyGuide,
@@ -188,6 +189,23 @@ async function testNlJsonUnwrap(): Promise<void> {
   ok("NL { text } JSON routes to LLM and respects totalUsdc");
 }
 
+async function testEnsResolveParsing(): Promise<void> {
+  const queries = parseEnsResolveQueries(
+    JSON.stringify({
+      queries: [
+        { name: "blockdevre.base.eth" },
+        { name: "vitalik.eth" },
+        { address: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045" },
+      ],
+    }),
+  );
+
+  assert.equal(queries.length, 3);
+  assert.equal(queries[0]?.direction, "forward");
+  assert.equal(queries[2]?.direction, "reverse");
+  ok("ENS resolver parses queries array from requirements");
+}
+
 async function main(): Promise<void> {
   console.log("\nRemifi flow verification (planupdate.md)\n");
 
@@ -196,6 +214,7 @@ async function main(): Promise<void> {
   const policyId = await testPolicyCreationAndStore();
   await testExecuteByReference(policyId);
   testEnsJourneyGuide();
+  testEnsResolveParsing();
   await testNlJsonUnwrap();
 
   console.log(`\n${passed} checks passed.\n`);

@@ -42,17 +42,35 @@ const RECIPIENTS = [
 
 type ExecutionHireGuide = {
   step: number;
+  amount?: string;
   requirements: {
     policyId: string;
-    totalUsdc: string;
-    recipient: string;
+    recipient:
+      | string
+      | { address: string; label: string; amount: string };
   };
 };
+
+type CapOrderFund = {
+  fundAmount: string;
+  fundToken: string;
+};
+
+function hireLabel(hire: ExecutionHireGuide): string {
+  const r = hire.requirements.recipient;
+  return typeof r === "string" ? r : r.label;
+}
 
 type JourneyNextStep = {
   service: string;
   requirements: Record<string, unknown>;
 };
+
+function fundAmountFromHire(hire: ExecutionHireGuide): string | undefined {
+  if (hire.amount) return hire.amount;
+  const r = hire.requirements.recipient;
+  return typeof r === "object" ? r.amount : undefined;
+}
 
 async function runCapOrder(
   client: AgentClient,
@@ -61,10 +79,13 @@ async function runCapOrder(
   serviceId: string,
   requirements: string,
   timeoutMs = 180_000,
+  fund?: CapOrderFund,
 ): Promise<Record<string, unknown>> {
   return new Promise((resolveStep, rejectStep) => {
     let orderId: string | undefined;
     let negotiationId = "";
+    let paid = false;
+    let paymentStarted = false;
     let settled = false;
 
     const settle = (fn: () => void) => {
@@ -91,21 +112,48 @@ async function runCapOrder(
       settle(() => resolveStep(parsed));
     };
 
-    const payOrder = async (id: string) => {
-      if (orderId) return;
+    const payWhenReady = async (id: string) => {
+      if (paymentStarted || paid) return;
+      paymentStarted = true;
       orderId = id;
-      console.log(`  order ${orderId} — paying…`);
+
       try {
-        const pay = await client.payOrder(orderId);
-        console.log(`  pay tx: ${pay.txHash}`);
+        for (let attempt = 0; attempt < 60; attempt++) {
+          if (settled || paid) return;
+          const order = await client.getOrder(id);
+          if (order.status === "created") {
+            paid = true;
+            console.log(`  order ${id} — paying…`);
+            const pay = await client.payOrder(id);
+            console.log(`  pay tx: ${pay.txHash}`);
+            return;
+          }
+          if (
+            order.status === "paid" ||
+            order.status === "delivered" ||
+            order.status === "completed"
+          ) {
+            paid = true;
+            return;
+          }
+          await new Promise((r) => setTimeout(r, 1_000));
+        }
+        settle(() =>
+          rejectStep(new Error(`${label}: order ${id} never reached created status`)),
+        );
       } catch (err) {
+        paymentStarted = false;
         settle(() => rejectStep(err instanceof Error ? err : new Error(String(err))));
       }
     };
 
     const onOrderCreated = async (event: { negotiation_id?: string; order_id?: string }) => {
       if (event.negotiation_id !== negotiationId || !event.order_id) return;
-      await payOrder(event.order_id);
+      try {
+        await payWhenReady(event.order_id);
+      } catch (err) {
+        settle(() => rejectStep(err instanceof Error ? err : new Error(String(err))));
+      }
     };
 
     stream.on(EventType.OrderCreated, onOrderCreated);
@@ -124,7 +172,7 @@ async function runCapOrder(
       for (let i = 0; i < ticks; i++) {
         if (settled) return;
 
-        if (!orderId && negotiationId) {
+        if (!paid && negotiationId) {
           try {
             const neg = await client.getNegotiation(negotiationId);
             if (neg.status === "rejected") {
@@ -132,17 +180,24 @@ async function runCapOrder(
               return;
             }
             if (neg.status === "accepted" && neg.orderId) {
-              await payOrder(neg.orderId);
+              await payWhenReady(neg.orderId);
             }
-          } catch {
-            // retry on next tick
+          } catch (err) {
+            if (!settled) {
+              settle(() => rejectStep(err instanceof Error ? err : new Error(String(err))));
+            }
+            return;
           }
         }
 
         if (orderId) {
           try {
             const order = await client.getOrder(orderId);
-            if (order.status === "completed" || order.status === "delivered") {
+            if (
+              order.status === "completed" ||
+              order.status === "delivered" ||
+              order.status === "evaluating"
+            ) {
               await finishFromDelivery(orderId);
               return;
             }
@@ -160,7 +215,11 @@ async function runCapOrder(
     };
 
     client
-      .negotiateOrder({ serviceId, requirements })
+      .negotiateOrder({
+        serviceId,
+        requirements,
+        ...(fund ? { fundAmount: fund.fundAmount, fundToken: fund.fundToken } : {}),
+      })
       .then((neg) => {
         negotiationId = neg.negotiationId;
         console.log(`  negotiation ${negotiationId}`);
@@ -182,13 +241,11 @@ function buildEnsRequirements(org: string): string {
   });
 }
 
-function buildPolicyRequirements(org: string, totalUsdc: string): string {
+function buildPolicyRequirements(totalUsdc: string): string {
   return JSON.stringify({
-    org,
     totalUsdc,
-    name: `${org} split`,
+    name: "Live test split",
     recipients: RECIPIENTS.map((r) => ({
-      subname: r.subname,
       address: r.address,
       label: r.label,
       bps: r.bps,
@@ -201,6 +258,9 @@ async function main(): Promise<void> {
   if (!ensServiceId) throw new Error("Set CROO_SERVICE_ID_CREATE_ENS");
   if (!policyServiceId) throw new Error("Set CROO_SERVICE_ID_CREATE_POLICY");
   if (!executeServiceId) throw new Error("Set CROO_SERVICE_ID_EXECUTE_PAYMENT");
+
+  const usdcAddress = process.env.USDC_ADDRESS?.trim();
+  if (!usdcAddress) throw new Error("Set USDC_ADDRESS for execution fund transfers");
 
   const client = new AgentClient(
     {
@@ -217,7 +277,7 @@ async function main(): Promise<void> {
   console.log(`Principal (totalUsdc): ${FUND_AMOUNT}`);
   console.log(`Skip ENS: ${SKIP_ENS}\n`);
 
-  let policyRequirements = buildPolicyRequirements(JOURNEY_ORG, FUND_AMOUNT);
+  let policyRequirements = buildPolicyRequirements(FUND_AMOUNT);
   let step = 1;
 
   try {
@@ -283,15 +343,20 @@ async function main(): Promise<void> {
     step += 1;
 
     for (const hire of hires) {
-      console.log(
-        `── Step ${step} · Execute · ${hire.requirements.recipient} ──`,
-      );
+      const label = hireLabel(hire);
+      const legAmount = fundAmountFromHire(hire);
+      if (!legAmount) {
+        throw new Error(`Execution hire for ${label} missing recipient.amount`);
+      }
+      console.log(`── Step ${step} · Execute · ${label} (${legAmount} base units) ──`);
       const execDelivery = await runCapOrder(
         client,
         stream,
-        `execute-${hire.requirements.recipient}`,
+        `execute-${label}`,
         executeServiceId,
         JSON.stringify(hire.requirements),
+        180_000,
+        { fundAmount: legAmount, fundToken: usdcAddress },
       );
       const txHashes = execDelivery.txHashes as string[] | undefined;
       console.log(`  ✓ tx: ${txHashes?.[0] ?? "n/a"}\n`);

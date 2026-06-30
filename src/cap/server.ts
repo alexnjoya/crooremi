@@ -41,7 +41,17 @@ async function runProviderSession(): Promise<void> {
       const negotiation = await client.getNegotiation(negotiationId);
       await acceptNegotiation(client, negotiation);
     } catch (err) {
-      console.error("[remifi] accept error:", err);
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[remifi] accept error:", message);
+      try {
+        await client.rejectNegotiation(
+          negotiationId,
+          message.slice(0, 500),
+        );
+        console.log(`[remifi] rejected negotiation ${negotiationId}`);
+      } catch (rejectErr) {
+        console.error("[remifi] failed to reject negotiation:", rejectErr);
+      }
     }
   });
 

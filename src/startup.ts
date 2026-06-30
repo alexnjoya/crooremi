@@ -19,6 +19,10 @@ const PRODUCTION_REQUIRED: RequiredInProd[] = [
     hint: "Agent Store → createEnsName service ID",
   },
   {
+    key: "CROO_SERVICE_ID_RESOLVE_ENS",
+    hint: "Agent Store → ENS Forward & Reverse Resolver service ID",
+  },
+  {
     key: "ENS_REGISTRAR_PRIVATE_KEY",
     hint: "Operator wallet — pays ENS registration gas on Base",
   },

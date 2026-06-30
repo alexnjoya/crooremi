@@ -4,7 +4,7 @@ import {
   type Negotiation,
   type Order,
 } from "@croo-network/sdk";
-import { isCreateEnsService, isCreatePolicyService, isExecutePaymentService } from "../config.js";
+import { isCreateEnsService, isCreatePolicyService, isExecutePaymentService, isResolveEnsService } from "../config.js";
 import { executeCrooDirectSettlement } from "../chain/croo-settlement.js";
 import { createEnsFromRequirements } from "../policy/ens-service.js";
 import { attachEnsJourneyGuide, attachPolicyJourneyGuide } from "../policy/journey-guide.js";
@@ -14,6 +14,7 @@ import {
   resolveExecuteFundAddress,
 } from "../policy/execute-resolver.js";
 import { savePolicy, toStoredPolicy } from "../policy/store.js";
+import { resolveEnsFromRequirements } from "../policy/ens-resolve.js";
 
 export type HandlerContext = {
   client: AgentClient;
@@ -66,6 +67,15 @@ async function handleCreatePolicy(ctx: HandlerContext): Promise<void> {
   await deliverSchema(ctx.client, ctx.orderId, delivery);
 }
 
+async function handleResolveEnsName(ctx: HandlerContext): Promise<void> {
+  const delivery = await resolveEnsFromRequirements(ctx.negotiation.requirements);
+  const resolved = delivery.results.filter((row) => row.resolved).length;
+  log("info", `resolveEnsName delivered ${resolved}/${delivery.results.length}`, {
+    success: delivery.success,
+  });
+  await deliverSchema(ctx.client, ctx.orderId, delivery);
+}
+
 async function handleExecutePayment(ctx: HandlerContext): Promise<void> {
   const leg = await parseExecutePayoutLeg(ctx.negotiation.requirements);
   const delivery = executeCrooDirectSettlement(ctx.order, leg);
@@ -93,6 +103,11 @@ export async function handleOrderPaid(
     return;
   }
 
+  if (isResolveEnsService(order.serviceId)) {
+    await handleResolveEnsName(ctx);
+    return;
+  }
+
   if (isCreatePolicyService(order.serviceId)) {
     await handleCreatePolicy(ctx);
     return;
@@ -105,7 +120,8 @@ export async function handleOrderPaid(
 
   throw new Error(
     `Unknown service ${order.serviceId}. Set CROO_SERVICE_ID_CREATE_POLICY, ` +
-      `CROO_SERVICE_ID_CREATE_ENS, and CROO_SERVICE_ID_EXECUTE_PAYMENT in .env.`,
+      `CROO_SERVICE_ID_CREATE_ENS, CROO_SERVICE_ID_RESOLVE_ENS, and ` +
+      `CROO_SERVICE_ID_EXECUTE_PAYMENT in .env.`,
   );
 }
 

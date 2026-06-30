@@ -21,6 +21,16 @@ export {
   parseExecutePayoutLeg,
   resolveExecuteFundAddress,
 } from "./execute-resolver.js";
+export {
+  parseEnsResolveQueries,
+  resolveEnsFromRequirements,
+} from "./ens-resolve.js";
+export type {
+  EnsLookupResult,
+  EnsResolveChain,
+  EnsResolveDelivery,
+  EnsResolveDirection,
+} from "./ens-resolve.js";
 export { interpretPolicyFromRequirements } from "./interpreter.js";
 export {
   attachEnsJourneyGuide,
