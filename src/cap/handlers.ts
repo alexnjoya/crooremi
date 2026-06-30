@@ -4,7 +4,7 @@ import {
   type Negotiation,
   type Order,
 } from "@croo-network/sdk";
-import { isCreateEnsService, isCreatePolicyService, isExecutePaymentService, isResolveEnsService } from "../config.js";
+import { isCreateEnsService, isCreatePolicyService, isExecutePaymentService, isInstantUsdcPayService, isResolveEnsService } from "../config.js";
 import { executePayrollSettlement } from "../chain/payroll-settlement.js";
 import { createEnsFromRequirements } from "../policy/ens-service.js";
 import { attachEnsJourneyGuide, attachPolicyJourneyGuide } from "../policy/journey-guide.js";
@@ -13,6 +13,12 @@ import {
   parseExecutePayrollPlan,
   resolveExecuteFundAddress,
 } from "../policy/execute-resolver.js";
+import {
+  buildInstantUsdcPayDelivery,
+  parseInstantUsdcPayRequirements,
+  resolveInstantPayFundAddress,
+  resolveInstantUsdcPay,
+} from "../policy/instant-usdc-pay.js";
 import { savePolicy, toStoredPolicy } from "../policy/store.js";
 import { resolveEnsFromRequirements } from "../policy/ens-resolve.js";
 
@@ -95,6 +101,23 @@ async function handleExecutePayment(ctx: HandlerContext): Promise<void> {
   });
 }
 
+async function handleInstantUsdcPay(ctx: HandlerContext): Promise<void> {
+  const fundAmount = ctx.order.fundAmount ?? ctx.negotiation.fundAmount;
+  const parsed = await parseInstantUsdcPayRequirements(ctx.negotiation.requirements, {
+    fundAmount,
+  });
+  const resolved = await resolveInstantUsdcPay(parsed);
+  const delivery = buildInstantUsdcPayDelivery(ctx.order, resolved);
+  const deliverTxHash = await deliverSchema(ctx.client, ctx.orderId, delivery);
+
+  log("info", `instantUsdcPay delivered → ${delivery.to}`, {
+    amountUsdc: delivery.amountUsdc,
+    fundTxHash: delivery.fundTxHash,
+    deliverTxHash,
+    settlement: delivery.settlement,
+  });
+}
+
 export async function handleOrderPaid(
   client: AgentClient,
   orderId: string,
@@ -127,10 +150,15 @@ export async function handleOrderPaid(
     return;
   }
 
+  if (isInstantUsdcPayService(order.serviceId)) {
+    await handleInstantUsdcPay(ctx);
+    return;
+  }
+
   throw new Error(
     `Unknown service ${order.serviceId}. Set CROO_SERVICE_ID_CREATE_POLICY, ` +
-      `CROO_SERVICE_ID_CREATE_ENS, CROO_SERVICE_ID_RESOLVE_ENS, and ` +
-      `CROO_SERVICE_ID_EXECUTE_PAYMENT in .env.`,
+      `CROO_SERVICE_ID_CREATE_ENS, CROO_SERVICE_ID_RESOLVE_ENS, ` +
+      `CROO_SERVICE_ID_EXECUTE_PAYMENT, and CROO_SERVICE_ID_INSTANT_USDC_PAY in .env.`,
   );
 }
 
@@ -147,6 +175,19 @@ export async function acceptNegotiation(
       fundAddress,
     );
     log("info", `accepted fund-transfer → ${fundAddress} → order ${result.order.orderId}`);
+    return;
+  }
+
+  if (isInstantUsdcPayService(serviceId)) {
+    const fundAddress = await resolveInstantPayFundAddress(
+      negotiation.requirements,
+      { fundAmount: negotiation.fundAmount },
+    );
+    const result = await client.acceptNegotiationWithFundAddress(
+      negotiationId,
+      fundAddress,
+    );
+    log("info", `accepted instant USDC pay → ${fundAddress} → order ${result.order.orderId}`);
     return;
   }
 

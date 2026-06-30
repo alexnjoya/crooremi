@@ -230,6 +230,35 @@ async function testEnsResolveParsing(): Promise<void> {
   ok("ENS resolver accepts plain text name");
 }
 
+async function testInstantUsdcPayParsing(): Promise<void> {
+  const { parseInstantUsdcPayRequirements } = await import(
+    "../src/policy/instant-usdc-pay.js"
+  );
+
+  const fromJson = await parseInstantUsdcPayRequirements(
+    JSON.stringify({
+      to: "0xB98cFAC37b8bD7f549789718aC17F8aEE7cE0c37",
+      amount: "50000",
+    }),
+  );
+  assert.equal(fromJson.to, "0xB98cFAC37b8bD7f549789718aC17F8aEE7cE0c37");
+  assert.equal(fromJson.amount, "50000");
+  ok("instant USDC pay parses JSON to + amount");
+
+  const fromNl = await parseInstantUsdcPayRequirements(
+    "Send 0.05 USDC to 0xB98cFAC37b8bD7f549789718aC17F8aEE7cE0c37",
+  );
+  assert.equal(fromNl.amount, "50000");
+  ok("instant USDC pay parses natural language send X USDC to Y");
+
+  const fundFallback = await parseInstantUsdcPayRequirements(
+    JSON.stringify({ to: "0xB98cFAC37b8bD7f549789718aC17F8aEE7cE0c37" }),
+    { fundAmount: "75000" },
+  );
+  assert.equal(fundFallback.amount, "75000");
+  ok("instant USDC pay uses fundAmount when amount omitted");
+}
+
 async function main(): Promise<void> {
   console.log("\nRemifi flow verification\n");
 
@@ -240,6 +269,7 @@ async function main(): Promise<void> {
   await testPayrollDisbursement(policyId);
   testEnsJourneyGuide();
   testEnsResolveParsing();
+  await testInstantUsdcPayParsing();
   await testNlJsonUnwrap();
 
   console.log(`\n${passed} checks passed.\n`);

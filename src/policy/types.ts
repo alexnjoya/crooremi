@@ -164,3 +164,17 @@ export type ExecutePaymentDelivery = {
   baseExplorer: string;
   settlement: "router_payroll" | "wallet_payroll" | "mock_payroll" | "croo_payroll";
 };
+
+export type InstantUsdcPayDelivery = {
+  success: true;
+  to: `0x${string}`;
+  toInput: string;
+  ens?: string;
+  amount: string;
+  amountUsdc: string;
+  reference?: string;
+  fundTxHash: string;
+  txHash: string;
+  baseExplorer: string;
+  settlement: "direct_cap";
+};

@@ -20,6 +20,7 @@ const envSchema = z.object({
   CROO_SERVICE_ID_EXECUTE_PAYMENT: z.string().optional(),
   CROO_SERVICE_ID_CREATE_ENS: z.string().optional(),
   CROO_SERVICE_ID_RESOLVE_ENS: z.string().optional(),
+  CROO_SERVICE_ID_INSTANT_USDC_PAY: z.string().optional(),
   CROO_REQUESTER_SDK_KEY: z.string().optional(),
   CROO_TARGET_SERVICE_ID: z.string().optional(),
   BASE_RPC_URL: z.string().url().default("https://mainnet.base.org"),
@@ -114,6 +115,13 @@ export function isResolveEnsService(serviceId: string): boolean {
   return Boolean(
     env.CROO_SERVICE_ID_RESOLVE_ENS &&
       serviceId === env.CROO_SERVICE_ID_RESOLVE_ENS,
+  );
+}
+
+export function isInstantUsdcPayService(serviceId: string): boolean {
+  return Boolean(
+    env.CROO_SERVICE_ID_INSTANT_USDC_PAY &&
+      serviceId === env.CROO_SERVICE_ID_INSTANT_USDC_PAY,
   );
 }
 

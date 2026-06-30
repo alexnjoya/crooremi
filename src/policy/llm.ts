@@ -96,6 +96,22 @@ const llmEnsResolveSchema = z.object({
 
 export type LlmEnsResolveDraft = z.infer<typeof llmEnsResolveSchema>;
 
+const llmInstantUsdcPaySchema = z.object({
+  to: z
+    .string()
+    .describe("Recipient 0x address or Base name (*.base.eth)"),
+  amount: z
+    .string()
+    .regex(/^\d+$/)
+    .describe("USDC amount in 6-decimal base units. 0.50 USDC = 500000"),
+  reference: z
+    .string()
+    .optional()
+    .describe("Optional payment memo or invoice reference"),
+});
+
+export type LlmInstantUsdcPayDraft = z.infer<typeof llmInstantUsdcPaySchema>;
+
 function createAnthropicModel(): BaseChatModel {
   return new ChatAnthropic({
     apiKey: env.ANTHROPIC_API_KEY,
@@ -188,6 +204,16 @@ Rules:
 - Support multiple lookups in one request (max 10).
 - Input may be plain text, comma-separated names, or JSON wrappers.`;
 
+const instantUsdcPaySystemPrompt = `You convert instant USDC payment requests into structured pay instructions.
+
+Rules:
+- to: recipient 0x address or Base name (*.base.eth). Resolve names as given — do not invent addresses.
+- amount: USDC in 6-decimal base units only (500000 = 0.50 USDC, 1000000 = 1 USDC).
+- Convert dollar amounts: $1 = 1000000, $0.10 = 100000, $10 = 10000000.
+- reference: optional memo, invoice id, or note if user mentions one.
+- "Send X USDC to Y", "Pay Y X dollars", "Transfer 0.5 USDC to alice.base.eth" → extract to + amount.
+- Input may be plain English, Agent Store Text, or JSON — interpret intent.`;
+
 export async function interpretPolicyText(
   requirements: string,
 ): Promise<LlmPolicyDraft> {
@@ -240,6 +266,20 @@ export async function interpretEnsResolveText(
     llmEnsResolveSchema,
     "EnsResolve",
     ensResolveSystemPrompt,
+    requirements,
+  );
+}
+
+export async function interpretInstantUsdcPayText(
+  requirements: string,
+): Promise<LlmInstantUsdcPayDraft> {
+  if (!hasLlmKeys()) {
+    throw new Error(llmRequiredError("Instant USDC Pay"));
+  }
+  return runStructuredChain(
+    llmInstantUsdcPaySchema,
+    "InstantUsdcPay",
+    instantUsdcPaySystemPrompt,
     requirements,
   );
 }
