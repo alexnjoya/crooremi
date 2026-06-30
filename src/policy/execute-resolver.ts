@@ -5,8 +5,8 @@ import type { ExecutePayoutLeg, SplitRecipient } from "./types.js";
 
 const addressSchema = z
   .string()
-  .regex(/^0x[a-fA-F0-9]{40}$/)
-  .transform((value) => value as `0x${string}`);
+  .regex(/^0x[a-fA-F0-9]{40}$/i)
+  .transform((value) => value.toLowerCase() as `0x${string}`);
 
 const executeDirectSchema = z.object({
   policyId: z.string().min(1),
@@ -17,16 +17,29 @@ const executeDirectSchema = z.object({
   }),
 });
 
+const policySnapshotSchema = z.object({
+  recipients: z
+    .array(
+      z.object({
+        address: addressSchema,
+        label: z.string().min(1),
+        bps: z.number().int().positive(),
+      }),
+    )
+    .min(1),
+});
+
 const executeByReferenceSchema = z
   .object({
     policyId: z.string().min(1),
     totalUsdc: z.string().regex(/^\d+$/),
     recipient: z.string().min(1).optional(),
     recipientIndex: z.number().int().nonnegative().optional(),
+    policy: policySnapshotSchema.optional(),
   })
   .refine(
     (input) => input.recipient !== undefined || input.recipientIndex !== undefined,
-    { message: "Provide recipient (label) or recipientIndex" },
+    { message: "Provide recipient (label or 0x address) or recipientIndex" },
   );
 
 function tryParseJson(raw: string): unknown {
@@ -37,22 +50,36 @@ function tryParseJson(raw: string): unknown {
   }
 }
 
+function isAddressLike(value: string): boolean {
+  return /^0x[a-fA-F0-9]{40}$/i.test(value.trim());
+}
+
 function findPolicyRecipient(
   recipients: SplitRecipient[],
-  label: string | undefined,
+  labelOrAddress: string | undefined,
   index: number | undefined,
 ): SplitRecipient {
-  if (label !== undefined) {
-    const match = recipients.find(
-      (r) => r.label.toLowerCase() === label.toLowerCase(),
-    );
-    if (!match) {
-      const labels = recipients.map((r) => r.label).join(", ");
-      throw new Error(
-        `Recipient "${label}" not found in policy. Available: ${labels}`,
-      );
+  if (labelOrAddress !== undefined) {
+    const needle = labelOrAddress.trim();
+    if (isAddressLike(needle)) {
+      const addr = needle.toLowerCase();
+      const byAddress = recipients.find((r) => r.address.toLowerCase() === addr);
+      if (byAddress) {
+        return byAddress;
+      }
     }
-    return match;
+
+    const byLabel = recipients.find(
+      (r) => r.label.toLowerCase() === needle.toLowerCase(),
+    );
+    if (byLabel) {
+      return byLabel;
+    }
+
+    const labels = recipients.map((r) => `${r.label} (${r.address})`).join(", ");
+    throw new Error(
+      `Recipient "${labelOrAddress}" not found in policy. Available: ${labels}`,
+    );
   }
 
   if (index === undefined || index >= recipients.length) {
@@ -64,19 +91,29 @@ function findPolicyRecipient(
   return recipients[index]!;
 }
 
+async function loadPolicyRecipients(
+  policyId: string,
+  inline?: z.infer<typeof policySnapshotSchema>,
+): Promise<SplitRecipient[]> {
+  const stored = await loadPolicy(policyId);
+  if (stored) {
+    return stored.policy.recipients;
+  }
+  if (inline) {
+    return inline.recipients;
+  }
+  throw new Error(
+    `Policy "${policyId}" not found. Use executionGuide requirements from your ` +
+      "policy delivery (direct address + amount), or re-hire USDC Split Policy.",
+  );
+}
+
 async function resolveByReference(
   input: z.infer<typeof executeByReferenceSchema>,
 ): Promise<ExecutePayoutLeg> {
-  const stored = await loadPolicy(input.policyId);
-  if (!stored) {
-    throw new Error(
-      `Policy "${input.policyId}" not found. Hire USDC Split Policy first ` +
-        "(policies are saved when the provider delivers successfully).",
-    );
-  }
-
+  const recipients = await loadPolicyRecipients(input.policyId, input.policy);
   const match = findPolicyRecipient(
-    stored.policy.recipients,
+    recipients,
     input.recipient,
     input.recipientIndex,
   );
@@ -118,8 +155,8 @@ export async function parseExecutePayoutLeg(
 
   throw new Error(
     "executePaymentJob requires either " +
-      '{ policyId, totalUsdc, recipient } or ' +
-      '{ policyId, recipient: { address, label, amount } }',
+      '{ policyId, recipient: { address, label, amount } } (recommended) or ' +
+      '{ policyId, totalUsdc, recipient }',
   );
 }
 

@@ -11,6 +11,7 @@ node_modules/
 .env.production.local
 .env.*.local
 .env.railway.tmp
+.env.railway
 *.railway.tmp
 *.pem
 *.key

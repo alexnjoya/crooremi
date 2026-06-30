@@ -3,11 +3,17 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  isDatabaseEnabled,
+  isDatabaseReady,
+  loadPolicyFromDatabase,
+  savePolicyToDatabase,
+} from "./database.js";
 import type { StoredPolicy } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-/** In-process fallback when disk is not writable (e.g. misconfigured deploy). */
+/** Hot cache for the current process. */
 const memoryStore = new Map<string, StoredPolicy>();
 
 let policyDir: string | undefined;
@@ -32,7 +38,7 @@ function policyFilePath(id: string, dir = getPolicyDir()): string {
   return join(dir, `${safe}.json`);
 }
 
-async function writeToDisk(delivery: StoredPolicy): Promise<boolean> {
+async function writeToDisk(delivery: StoredPolicy): Promise<void> {
   const dir = getPolicyDir();
   try {
     if (!existsSync(dir)) {
@@ -43,7 +49,6 @@ async function writeToDisk(delivery: StoredPolicy): Promise<boolean> {
       JSON.stringify(delivery, null, 2),
       "utf8",
     );
-    return true;
   } catch (err) {
     const tmpDir = join(tmpdir(), "remifi-policies");
     try {
@@ -56,22 +61,22 @@ async function writeToDisk(delivery: StoredPolicy): Promise<boolean> {
         JSON.stringify(delivery, null, 2),
         "utf8",
       );
-      console.warn(
-        "[remifi] policy store: using temp dir",
-        tmpDir,
-        "(set REMIFI_POLICY_DIR or fix data/ permissions for persistence)",
-      );
-      return true;
+      console.warn("[remifi] policy store: using temp dir", tmpDir);
     } catch {
       const message = err instanceof Error ? err.message : String(err);
       console.warn("[remifi] policy disk save failed, in-memory only:", message);
-      return false;
     }
   }
 }
 
 export async function savePolicy(delivery: StoredPolicy): Promise<void> {
   memoryStore.set(delivery.policyId, delivery);
+
+  if (isDatabaseEnabled() && isDatabaseReady()) {
+    await savePolicyToDatabase(delivery);
+    return;
+  }
+
   await writeToDisk(delivery);
 }
 
@@ -79,6 +84,14 @@ export async function loadPolicy(policyId: string): Promise<StoredPolicy | null>
   const cached = memoryStore.get(policyId);
   if (cached) {
     return cached;
+  }
+
+  if (isDatabaseEnabled() && isDatabaseReady()) {
+    const fromDb = await loadPolicyFromDatabase(policyId);
+    if (fromDb) {
+      memoryStore.set(policyId, fromDb);
+      return fromDb;
+    }
   }
 
   const dirs = [

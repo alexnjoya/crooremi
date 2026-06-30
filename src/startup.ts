@@ -43,6 +43,10 @@ export function validateStartup(): void {
     }
   }
 
+  if (!env.DATABASE_URL) {
+    errors.push("DATABASE_URL is required (Neon Postgres — policy store for execution)");
+  }
+
   if (errors.length > 0) {
     throw new Error(
       `Production startup blocked:\n${errors.map((e) => `  - ${e}`).join("\n")}`,

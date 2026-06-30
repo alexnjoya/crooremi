@@ -24,8 +24,11 @@ export function buildExecutionGuide(
       service: "USDC Split Execution" as const,
       requirements: {
         policyId: delivery.policyId,
-        totalUsdc,
-        recipient: recipient.label,
+        recipient: {
+          address: recipient.address,
+          label: recipient.label,
+          amount: amount.toString(),
+        },
       },
       recipientAddress: recipient.address,
       amount: amount.toString(),
@@ -38,8 +41,8 @@ export function buildExecutionGuide(
     totalUsdc,
     hires,
     note:
-      "Hire USDC Split Execution once per step. Paste each requirements block — " +
-      "no need to copy addresses or calculate amounts.",
+      "Hire USDC Split Execution once per step. Paste each requirements block exactly — " +
+      "address and amount are pre-filled (no policy lookup needed).",
     ...(delivery.remainderBps > 0 ? { remainderBps: delivery.remainderBps } : {}),
   };
 }

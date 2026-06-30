@@ -11,7 +11,8 @@
     "build:prod": "npm run typecheck && npm run build",
     "typecheck": "tsc --noEmit",
     "journey": "tsx scripts/run-full-journey.ts",
-    "verify:flow": "tsx scripts/verify-flow.ts"
+    "verify:flow": "tsx scripts/verify-flow.ts",
+    "railway:env": "tsx scripts/sync-railway-env.ts"
   },
   "dependencies": {
     "@croo-network/sdk": "^0.2.1",
@@ -20,11 +21,13 @@
     "@langchain/openai": "^0.5.13",
     "dotenv": "^16.4.7",
     "langchain": "^0.3.28",
+    "pg": "^8.22.0",
     "viem": "^2.31.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
+    "@types/pg": "^8.20.0",
     "tsx": "^4.19.3",
     "typescript": "^5.8.2"
   },

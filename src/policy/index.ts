@@ -31,3 +31,8 @@ export {
 } from "./journey-guide.js";
 export type { JourneyRecipient } from "./journey-guide.js";
 export { loadPolicy, savePolicy, toStoredPolicy } from "./store.js";
+export {
+  closePolicyDatabase,
+  initPolicyDatabase,
+  isDatabaseEnabled,
+} from "./database.js";

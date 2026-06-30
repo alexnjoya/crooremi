@@ -1,16 +1,31 @@
 import { startProvider } from "./cap/server.js";
 import { startHealthServer } from "./health.js";
+import { initPolicyDatabase } from "./policy/database.js";
 import { registerProcessHandlers, validateStartup } from "./startup.js";
 
 registerProcessHandlers();
 
-try {
-  validateStartup();
-} catch (err) {
-  console.error("[remifi] startup validation failed:", err);
-  process.exit(1);
+async function main(): Promise<void> {
+  try {
+    validateStartup();
+  } catch (err) {
+    console.error("[remifi] startup validation failed:", err);
+    process.exit(1);
+  }
+
+  startHealthServer();
+
+  try {
+    await initPolicyDatabase();
+  } catch (err) {
+    console.error("[remifi] database init failed:", err);
+    process.exit(1);
+  }
+
+  await startProvider();
 }
 
-startHealthServer();
-
-void startProvider();
+main().catch((err) => {
+  console.error("[remifi] fatal:", err);
+  process.exit(1);
+});

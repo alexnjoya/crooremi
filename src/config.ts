@@ -45,6 +45,10 @@ const envSchema = z.object({
     .optional()
     .transform((value) => value === "true" || value === "1"),
   ENS_REGISTRATION_YEARS: z.coerce.number().int().min(1).max(10).default(1),
+  DATABASE_URL: z
+    .string()
+    .optional()
+    .transform((value) => (value && value.trim() !== "" ? value.trim() : undefined)),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });

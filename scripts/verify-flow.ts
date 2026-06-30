@@ -10,6 +10,8 @@ loadEnv({ path: resolve(process.cwd(), ".env"), override: true });
 process.env.CROO_SDK_KEY ??= "croo_sk_verify_flow_test_key_placeholder_00";
 process.env.DEV_MOCK_ENS_SUBNAMES = "true";
 
+const { initPolicyDatabase } = await import("../src/policy/database.js");
+
 const {
   interpretPolicyFromRequirements,
 } = await import("../src/policy/interpreter.js");
@@ -64,9 +66,10 @@ async function testPolicyCreationAndStore(): Promise<string> {
   ok("createPolicy returns policyId, partial bps, executionGuide");
 
   const hire0 = delivery.executionGuide!.hires[0]!;
-  assert.equal(hire0.requirements.recipient, "wallet-a");
-  assert.equal(hire0.amount, "300000");
-  ok("executionGuide computes amounts from totalUsdc × bps");
+  assert.equal(hire0.requirements.recipient.label, "wallet-a");
+  assert.equal(hire0.requirements.recipient.amount, "300000");
+  assert.equal(hire0.requirements.recipient.address, "0xb98cfac37b8bd7f549789718ac17f8aee7ce0c37");
+  ok("executionGuide computes direct requirements (address + amount)");
 
   delivery.journeyGuide = attachPolicyJourneyGuide(delivery);
   assert.equal(delivery.journeyGuide.step, 2);
@@ -108,6 +111,20 @@ async function testExecuteByReference(policyId: string): Promise<void> {
   );
   assert.equal(legLegacy.recipient.amount, "300000");
   ok("legacy direct execute format still works");
+
+  // Direct format works without policy store
+  const legDirect = await parseExecutePayoutLeg(
+    JSON.stringify({
+      policyId,
+      recipient: {
+        address: "0xB98cFAC37b8bD7f549789718aC17F8aEE7cE0c37",
+        label: "wallet-a",
+        amount: "300000",
+      },
+    }),
+  );
+  assert.equal(legDirect.recipient.amount, "300000");
+  ok("direct requirements work without policy store");
 }
 
 function testEnsJourneyGuide(): void {
@@ -173,6 +190,8 @@ async function testNlJsonUnwrap(): Promise<void> {
 
 async function main(): Promise<void> {
   console.log("\nRemifi flow verification (planupdate.md)\n");
+
+  await initPolicyDatabase();
 
   const policyId = await testPolicyCreationAndStore();
   await testExecuteByReference(policyId);

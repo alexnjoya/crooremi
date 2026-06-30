@@ -49,14 +49,35 @@ export type CreatePolicyDelivery = {
   ensParentRegistration?: EnsParentRegistration;
 };
 
+export type ExecuteRequirementsDirect = {
+  policyId: string;
+  recipient: {
+    address: `0x${string}`;
+    label: string;
+    amount: string;
+  };
+};
+
+export type ExecuteRequirementsByReference = {
+  policyId: string;
+  totalUsdc: string;
+  recipient?: string;
+  recipientIndex?: number;
+  /** Inline snapshot if policy store miss (e.g. after Railway redeploy). */
+  policy?: {
+    recipients: Array<{
+      address: `0x${string}`;
+      label: string;
+      bps: number;
+    }>;
+  };
+};
+
 export type ExecutionHireGuide = {
   step: number;
   service: "USDC Split Execution";
-  requirements: {
-    policyId: string;
-    totalUsdc: string;
-    recipient: string;
-  };
+  /** Self-contained direct format — works without policy store lookup. */
+  requirements: ExecuteRequirementsDirect;
   recipientAddress: `0x${string}`;
   amount: string;
   /** Flat service fee in 6-decimal USDC units (default 1.00 USDC). */
