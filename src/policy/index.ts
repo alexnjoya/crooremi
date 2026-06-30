@@ -1,5 +1,33 @@
-export type { SplitPolicy, SplitRecipient, ExecutePayoutLeg } from "./types.js";
+export type {
+  SplitPolicy,
+  SplitRecipient,
+  ExecutePayoutLeg,
+  ExecutionGuide,
+  ExecutionHireGuide,
+  StoredPolicy,
+} from "./types.js";
 export {
-  interpretPolicyFromRequirements,
+  amountFromBps,
+  formatRemainderNote,
+  summarizeBps,
+  validateBps,
+} from "./bps.js";
+export {
+  buildExecutionGuide,
+  DEFAULT_GUIDE_TOTAL_USDC,
+  EXECUTE_SERVICE_FEE_USDC,
+} from "./execution-guide.js";
+export {
   parseExecutePayoutLeg,
-} from "./interpreter.js";
+  resolveExecuteFundAddress,
+} from "./execute-resolver.js";
+export { interpretPolicyFromRequirements } from "./interpreter.js";
+export {
+  attachEnsJourneyGuide,
+  attachPolicyJourneyGuide,
+  buildEnsBatchRequirements,
+  buildPolicyRequirements,
+  buildPolicyRequirementsFromEns,
+} from "./journey-guide.js";
+export type { JourneyRecipient } from "./journey-guide.js";
+export { loadPolicy, savePolicy, toStoredPolicy } from "./store.js";

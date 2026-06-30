@@ -34,9 +34,47 @@ export type EnsSubnameProvision = {
 export type CreatePolicyDelivery = {
   policyId: string;
   policy: Omit<SplitPolicy, "id"> & { recipients: SplitRecipient[] };
+  /** Sum of recipient bps (≤ 10000). */
+  allocatedBps: number;
+  /** Unallocated share when allocatedBps < 10000. */
+  remainderBps: number;
+  /** Set when remainderBps > 0 — explains funds left with payer. */
+  remainderNote?: string;
+  /** Ready-to-hire execution payloads — copy each step to USDC Split Execution. */
+  executionGuide?: ExecutionGuide;
+  /** Where this step fits in the 3-step Remifi flow. */
+  journeyGuide?: PolicyJourneyGuide;
   ensSubnames?: EnsSubnameProvision[];
   ensParent?: string;
   ensParentRegistration?: EnsParentRegistration;
+};
+
+export type ExecutionHireGuide = {
+  step: number;
+  service: "USDC Split Execution";
+  requirements: {
+    policyId: string;
+    totalUsdc: string;
+    recipient: string;
+  };
+  recipientAddress: `0x${string}`;
+  amount: string;
+  /** Flat service fee in 6-decimal USDC units (default 1.00 USDC). */
+  serviceFeeUsdc: string;
+  /** Principal + service fee the buyer pays for this hire. */
+  estimatedPayUsdc: string;
+};
+
+export type ExecutionGuide = {
+  totalUsdc: string;
+  hires: ExecutionHireGuide[];
+  note: string;
+  remainderBps?: number;
+};
+
+/** Persisted policy record for execute-by-reference lookups. */
+export type StoredPolicy = CreatePolicyDelivery & {
+  createdAt: string;
 };
 
 export type CreateEnsDelivery = {
@@ -50,6 +88,33 @@ export type CreateEnsDelivery = {
   orgRegistration?: EnsParentRegistration;
   baseExplorer?: string;
   mock?: boolean;
+};
+
+export type CreateEnsBatchDelivery = {
+  org: string;
+  orgLabel: string;
+  names: CreateEnsDelivery[];
+};
+
+export type JourneyNextStep = {
+  step: number;
+  service: string;
+  requirements: Record<string, unknown>;
+  note: string;
+};
+
+export type EnsJourneyGuide = {
+  step: 1;
+  flow: "ENS → Policy → Execution";
+  nextStep: JourneyNextStep;
+};
+
+export type PolicyJourneyGuide = {
+  step: 2;
+  flow: "ENS → Policy → Execution";
+  previousService: "ENS Payout Identity";
+  nextService: "USDC Split Execution";
+  note: string;
 };
 
 /** Single-recipient payout — CROO routes USDC at payOrder time. */

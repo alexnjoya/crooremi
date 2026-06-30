@@ -7,11 +7,13 @@ import {
 import { isCreateEnsService, isCreatePolicyService, isExecutePaymentService } from "../config.js";
 import { executeCrooDirectSettlement } from "../chain/croo-settlement.js";
 import { createEnsFromRequirements } from "../policy/ens-service.js";
+import { attachEnsJourneyGuide, attachPolicyJourneyGuide } from "../policy/journey-guide.js";
+import { interpretPolicyFromRequirements } from "../policy/interpreter.js";
 import {
-  interpretPolicyFromRequirements,
   parseExecutePayoutLeg,
   resolveExecuteFundAddress,
-} from "../policy/interpreter.js";
+} from "../policy/execute-resolver.js";
+import { savePolicy, toStoredPolicy } from "../policy/store.js";
 
 export type HandlerContext = {
   client: AgentClient;
@@ -44,20 +46,28 @@ async function deliverSchema(
 
 async function handleCreateEnsName(ctx: HandlerContext): Promise<void> {
   const delivery = await createEnsFromRequirements(ctx.negotiation.requirements);
+  const enriched = attachEnsJourneyGuide(delivery);
   const ens =
     "names" in delivery ? delivery.names[0]?.ens : delivery.ens;
-  log("info", `createEnsName delivered ${ens ?? "batch"}`);
-  await deliverSchema(ctx.client, ctx.orderId, delivery as Record<string, unknown>);
+  log("info", `createEnsName delivered ${ens ?? "batch"}`, {
+    nextStep: enriched.journeyGuide.nextStep.service,
+  });
+  await deliverSchema(ctx.client, ctx.orderId, enriched);
 }
 
 async function handleCreatePolicy(ctx: HandlerContext): Promise<void> {
   const delivery = await interpretPolicyFromRequirements(ctx.negotiation.requirements);
-  log("info", `createPolicy delivered ${delivery.policyId}`);
+  delivery.journeyGuide = attachPolicyJourneyGuide(delivery);
+  await savePolicy(toStoredPolicy(delivery));
+  log("info", `createPolicy delivered ${delivery.policyId}`, {
+    recipients: delivery.policy.recipients.length,
+    executionSteps: delivery.executionGuide?.hires.length ?? 0,
+  });
   await deliverSchema(ctx.client, ctx.orderId, delivery);
 }
 
 async function handleExecutePayment(ctx: HandlerContext): Promise<void> {
-  const leg = parseExecutePayoutLeg(ctx.negotiation.requirements);
+  const leg = await parseExecutePayoutLeg(ctx.negotiation.requirements);
   const delivery = executeCrooDirectSettlement(ctx.order, leg);
   log("info", `executePaymentJob delivered ${delivery.policyId}`, {
     settlement: delivery.settlement,
@@ -106,7 +116,7 @@ export async function acceptNegotiation(
   const { negotiationId, serviceId } = negotiation;
 
   if (isExecutePaymentService(serviceId)) {
-    const fundAddress = resolveExecuteFundAddress(negotiation.requirements);
+    const fundAddress = await resolveExecuteFundAddress(negotiation.requirements);
     const result = await client.acceptNegotiationWithFundAddress(
       negotiationId,
       fundAddress,

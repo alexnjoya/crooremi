@@ -1,13 +1,21 @@
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { env } from "../config.js";
+import {
+  formatRemainderNote,
+  percentToBps,
+  validateBps,
+} from "./bps.js";
 import { ensureUserOrg, resolveUserOrg, canProvisionEns } from "./ens-org.js";
 import { resolveRecipients } from "./ens.js";
 import { provisionPolicySubnames } from "./ens-subnames.js";
+import {
+  buildExecutionGuide,
+  DEFAULT_GUIDE_TOTAL_USDC,
+} from "./execution-guide.js";
 import { interpretPolicyText } from "./llm.js";
 import type {
   CreatePolicyDelivery,
-  ExecutePayoutLeg,
 } from "./types.js";
 
 type PolicyDraft = {
@@ -25,13 +33,37 @@ type PolicyDraft = {
 
 const addressOrEnsSchema = z.string().min(1);
 
-const recipientSchema = z.object({
-  address: addressOrEnsSchema,
-  label: z.string().min(1),
-  bps: z.number().int().positive(),
-  ens: z.string().optional(),
-  subname: z.string().optional(),
-});
+const NL_JSON_KEYS = ["text", "requirements", "input", "prompt", "message"] as const;
+
+const recipientSchema = z
+  .object({
+    address: addressOrEnsSchema,
+    label: z.string().min(1),
+    bps: z.number().int().positive().optional(),
+    percent: z.union([z.number().positive(), z.string().min(1)]).optional(),
+    ens: z.string().optional(),
+    subname: z.string().optional(),
+  })
+  .transform((recipient) => {
+    let bps = recipient.bps;
+    if (bps === undefined && recipient.percent !== undefined) {
+      const raw =
+        typeof recipient.percent === "string"
+          ? recipient.percent.replace(/%/g, "").trim()
+          : recipient.percent;
+      const pct = typeof raw === "number" ? raw : Number.parseFloat(raw);
+      if (!Number.isFinite(pct) || pct <= 0) {
+        throw new Error(`Invalid percent for recipient "${recipient.label}"`);
+      }
+      bps = percentToBps(pct);
+    }
+    if (!bps) {
+      throw new Error(
+        `Recipient "${recipient.label}" must include bps or percent`,
+      );
+    }
+    return { ...recipient, bps };
+  });
 
 const policyBodySchema = z.object({
   name: z.string().min(1),
@@ -44,31 +76,26 @@ const createPolicyJsonSchema = z.object({
   name: z.string().min(1).optional(),
   org: z.string().optional(),
   ensParent: z.string().optional(),
+  totalUsdc: z.string().regex(/^\d+$/).optional(),
   policy: policyBodySchema.optional(),
   recipients: z.array(recipientSchema).min(1).optional(),
 });
 
-const executePayoutLegSchema = z.object({
-  policyId: z.string().min(1),
-  recipient: z.object({
-    address: z
-      .string()
-      .regex(/^0x[a-fA-F0-9]{40}$/)
-      .transform((value) => value as `0x${string}`),
-    label: z.string().min(1),
-    amount: z.string().regex(/^\d+$/),
-  }),
-});
+function extractGuideTotalUsdc(raw: string): string {
+  const asJson = tryParseJson(raw);
+  if (asJson === null || typeof asJson !== "object" || asJson === null) {
+    return DEFAULT_GUIDE_TOTAL_USDC;
+  }
+  const record = asJson as Record<string, unknown>;
+  const total = record.totalUsdc;
+  if (typeof total === "string" && /^\d+$/.test(total)) {
+    return total;
+  }
+  return DEFAULT_GUIDE_TOTAL_USDC;
+}
 
 function newPolicyId(): string {
   return `pol_${randomBytes(6).toString("hex")}`;
-}
-
-function assertBpsSum(recipients: Array<{ bps: number }>): void {
-  const total = recipients.reduce((sum, r) => sum + r.bps, 0);
-  if (total !== 10_000) {
-    throw new Error(`Recipient bps must sum to 10000, got ${total}`);
-  }
 }
 
 function resolvePolicyOrgDomain(draft: PolicyDraft): string | undefined {
@@ -85,12 +112,12 @@ function normalizePolicyBody(
   input: z.infer<typeof createPolicyJsonSchema>,
 ): PolicyDraft {
   if (input.policy) {
-    assertBpsSum(input.policy.recipients);
+    validateBps(input.policy.recipients);
     return input.policy;
   }
 
   if (input.recipients) {
-    assertBpsSum(input.recipients);
+    validateBps(input.recipients);
     return {
       name: input.name ?? "Split policy",
       org: input.org,
@@ -99,7 +126,10 @@ function normalizePolicyBody(
     };
   }
 
-  throw new Error("Policy JSON must include policy or recipients");
+  throw new Error(
+    "Policy JSON must include policy or recipients. " +
+      "For natural language, use Text requirements or { \"text\": \"...\" }.",
+  );
 }
 
 function tryParseJson(raw: string): unknown {
@@ -110,8 +140,90 @@ function tryParseJson(raw: string): unknown {
   }
 }
 
-async function finalizePolicy(draft: PolicyDraft): Promise<CreatePolicyDelivery> {
-  assertBpsSum(draft.recipients);
+function hasLlmKeys(): boolean {
+  return Boolean(env.ANTHROPIC_API_KEY || env.OPENAI_API_KEY);
+}
+
+/** Agent Store often wraps NL in Schema JSON — unwrap before structured parse. */
+function unwrapNaturalLanguage(json: unknown): string | null {
+  if (typeof json !== "object" || json === null || Array.isArray(json)) {
+    return null;
+  }
+
+  const record = json as Record<string, unknown>;
+  if (record.policy || record.recipients) {
+    return null;
+  }
+
+  for (const key of NL_JSON_KEYS) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Machine-readable JSON — explicit recipients with address, label, and bps/percent.
+ * Skips LLM for speed and determinism when buyers send perfect Schema input.
+ */
+function isMachineStructuredPolicy(json: unknown): boolean {
+  if (typeof json !== "object" || json === null || Array.isArray(json)) {
+    return false;
+  }
+
+  const record = json as Record<string, unknown>;
+  const policy = record.policy as Record<string, unknown> | undefined;
+  const recipients = (record.recipients ?? policy?.recipients) as unknown;
+
+  if (!Array.isArray(recipients) || recipients.length === 0) {
+    return false;
+  }
+
+  return recipients.every((item) => {
+    if (typeof item !== "object" || item === null) {
+      return false;
+    }
+    const rec = item as Record<string, unknown>;
+    return (
+      typeof rec.address === "string" &&
+      typeof rec.label === "string" &&
+      (rec.bps !== undefined || rec.percent !== undefined)
+    );
+  });
+}
+
+async function parseStructuredPolicy(
+  json: unknown,
+  guideTotalUsdc: string,
+): Promise<CreatePolicyDelivery> {
+  const parsed = createPolicyJsonSchema.parse(json);
+  const policy = normalizePolicyBody(parsed);
+  return finalizePolicy(policy, guideTotalUsdc);
+}
+
+async function interpretNaturalLanguage(
+  text: string,
+  guideTotalUsdc: string,
+): Promise<CreatePolicyDelivery> {
+  if (!hasLlmKeys()) {
+    throw new Error(
+      "Natural-language createPolicy requires ANTHROPIC_API_KEY or OPENAI_API_KEY. " +
+        "Send JSON with recipients (address, label, bps/percent), or add an AI key to .env.",
+    );
+  }
+
+  const draft = await interpretPolicyText(text);
+  return finalizePolicy(draft, guideTotalUsdc);
+}
+
+async function finalizePolicy(
+  draft: PolicyDraft,
+  guideTotalUsdc: string = DEFAULT_GUIDE_TOTAL_USDC,
+): Promise<CreatePolicyDelivery> {
+  const { allocatedBps, remainderBps } = validateBps(draft.recipients);
   let recipients = await resolveRecipients(draft.recipients);
 
   const parentDomain = resolvePolicyOrgDomain(draft);
@@ -133,15 +245,23 @@ async function finalizePolicy(draft: PolicyDraft): Promise<CreatePolicyDelivery>
     ensParentRegistration = provisioned.ensParentRegistration ?? undefined;
   }
 
-  return {
+  const delivery: CreatePolicyDelivery = {
     policyId: newPolicyId(),
     policy: {
       name: draft.name,
       recipients,
     },
+    allocatedBps,
+    remainderBps,
+    ...(remainderBps > 0
+      ? { remainderNote: formatRemainderNote(remainderBps) }
+      : {}),
     ...(ensSubnames?.length ? { ensSubnames, ensParent: parentDomain } : {}),
     ...(ensParentRegistration ? { ensParentRegistration } : {}),
   };
+
+  delivery.executionGuide = buildExecutionGuide(delivery, guideTotalUsdc);
+  return delivery;
 }
 
 export async function interpretPolicyFromRequirements(
@@ -152,39 +272,35 @@ export async function interpretPolicyFromRequirements(
     throw new Error("createPolicy requirements cannot be empty");
   }
 
+  const guideTotalUsdc = extractGuideTotalUsdc(trimmed);
   const asJson = tryParseJson(trimmed);
-  if (asJson !== null) {
-    const parsed = createPolicyJsonSchema.parse(asJson);
-    const policy = normalizePolicyBody(parsed);
-    return finalizePolicy(policy);
+
+  // Plain text or JSON that is not machine-structured → LLM (when keys exist).
+  if (asJson === null) {
+    return interpretNaturalLanguage(trimmed, guideTotalUsdc);
   }
 
-  if (!env.ANTHROPIC_API_KEY && !env.OPENAI_API_KEY) {
+  const naturalLanguage = unwrapNaturalLanguage(asJson);
+  if (naturalLanguage !== null) {
+    return interpretNaturalLanguage(naturalLanguage, guideTotalUsdc);
+  }
+
+  if (isMachineStructuredPolicy(asJson)) {
+    return parseStructuredPolicy(asJson, guideTotalUsdc);
+  }
+
+  if (hasLlmKeys()) {
+    return interpretNaturalLanguage(trimmed, guideTotalUsdc);
+  }
+
+  try {
+    return await parseStructuredPolicy(asJson, guideTotalUsdc);
+  } catch (structuredError) {
+    const hint =
+      structuredError instanceof Error ? structuredError.message : String(structuredError);
     throw new Error(
-      "Natural-language createPolicy requires ANTHROPIC_API_KEY or OPENAI_API_KEY. " +
-        "Send JSON requirements, or add an AI key to .env.",
+      `${hint} Add ANTHROPIC_API_KEY or OPENAI_API_KEY to .env for smart parsing, ` +
+        "or send JSON with recipients: [{ address, label, bps|percent }].",
     );
   }
-
-  const draft = await interpretPolicyText(trimmed);
-  return finalizePolicy(draft);
-}
-
-export function parseExecutePayoutLeg(requirements: string): ExecutePayoutLeg {
-  const trimmed = requirements.trim();
-  if (!trimmed) {
-    throw new Error("executePaymentJob requirements cannot be empty");
-  }
-
-  const asJson = tryParseJson(trimmed);
-  if (asJson === null) {
-    throw new Error("executePaymentJob requires Schema JSON input");
-  }
-
-  return executePayoutLegSchema.parse(asJson);
-}
-
-/** CROO routes USDC to this address at payOrder time. */
-export function resolveExecuteFundAddress(requirements: string): `0x${string}` {
-  return parseExecutePayoutLeg(requirements).recipient.address;
 }

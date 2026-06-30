@@ -3,6 +3,7 @@ import { ChatOpenAI } from "@langchain/openai";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { z } from "zod";
 import { env } from "../config.js";
+import { BPS_TOTAL } from "./bps.js";
 
 const llmPolicySchema = z.object({
   name: z.string().describe("Short human-readable policy name"),
@@ -29,7 +30,9 @@ const llmPolicySchema = z.object({
           .number()
           .int()
           .positive()
-          .describe("Basis points; all recipients must sum to 10000"),
+          .describe(
+            "Basis points for this recipient only. 30% = 3000 bps. Do not pad to fill 100%.",
+          ),
       }),
     )
     .min(1),
@@ -41,13 +44,19 @@ const policyPrompt = ChatPromptTemplate.fromMessages([
   [
     "system",
     `You convert payment split instructions into structured split policies.
+
 Rules:
-- Express percentages as basis points (bps). 100% = 10000 bps. 40% = 4000 bps.
-- Recipients must sum to exactly 10000 bps.
+- Express each recipient share as basis points (bps). 100% = ${BPS_TOTAL} bps. 30% = 3000 bps.
+- Use the percentages the user stated — do NOT renormalize to 100% if they gave partial shares.
+  Example: "30% and 60%" → 3000 bps and 6000 bps (10% / 1000 bps stays unallocated).
+- If the user gives ratios without % (e.g. "3:2"), treat as proportional shares of 100%.
+- If shares would exceed 100%, scale down proportionally and mention it in the policy name.
 - Keep addresses exactly as given (0x hex or Base names like alice.base.eth).
 - Optional org: user's basename label (e.g. acme → names under acme.base.eth).
 - Optional subname: short label under that org (e.g. payroll → payroll.acme.base.eth).
-- Use concise labels (team, ops, treasury, creator, etc.).`,
+- Use concise labels (team, ops, treasury, wallet-a, etc.).
+- "Split my balance between X and Y" with two addresses and two percentages → two recipients only.
+- Input may be plain English or JSON-shaped text — interpret intent, not just keys.`,
   ],
   ["human", "{requirements}"],
 ]);
