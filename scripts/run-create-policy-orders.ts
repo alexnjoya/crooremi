@@ -90,9 +90,9 @@ async function runCreatePolicy(
       settle(() => resolveStep(parsed));
     };
 
-    const onOrderCreated = async (event: { negotiation_id?: string; order_id?: string }) => {
-      if (event.negotiation_id !== negotiationId || !event.order_id) return;
-      orderId = event.order_id;
+    const payOrder = async (id: string) => {
+      if (orderId) return;
+      orderId = id;
       console.log(`  order ${orderId} — paying…`);
       try {
         const pay = await client.payOrder(orderId);
@@ -100,6 +100,11 @@ async function runCreatePolicy(
       } catch (err) {
         settle(() => rejectStep(err instanceof Error ? err : new Error(String(err))));
       }
+    };
+
+    const onOrderCreated = async (event: { negotiation_id?: string; order_id?: string }) => {
+      if (event.negotiation_id !== negotiationId || !event.order_id) return;
+      await payOrder(event.order_id);
     };
 
     stream.on(EventType.OrderCreated, onOrderCreated);
@@ -116,21 +121,39 @@ async function runCreatePolicy(
     const poll = async () => {
       for (let i = 0; i < 36; i++) {
         if (settled) return;
-        await new Promise((r) => setTimeout(r, 5_000));
-        if (!orderId) continue;
-        try {
-          const order = await client.getOrder(orderId);
-          if (order.status === "completed" || order.status === "delivered") {
-            await finishFromDelivery(orderId);
-            return;
-          }
-        } catch (err) {
-          if (settled) return;
-          if (err instanceof Error && err.message.includes("delivery failed")) {
-            settle(() => rejectStep(err));
-            return;
+
+        if (!orderId && negotiationId) {
+          try {
+            const neg = await client.getNegotiation(negotiationId);
+            if (neg.status === "rejected") {
+              settle(() => rejectStep(new Error(`${label}: negotiation rejected`)));
+              return;
+            }
+            if (neg.status === "accepted" && neg.orderId) {
+              await payOrder(neg.orderId);
+            }
+          } catch {
+            // retry
           }
         }
+
+        if (orderId) {
+          try {
+            const order = await client.getOrder(orderId);
+            if (order.status === "completed" || order.status === "delivered") {
+              await finishFromDelivery(orderId);
+              return;
+            }
+          } catch (err) {
+            if (settled) return;
+            if (err instanceof Error && err.message.includes("delivery failed")) {
+              settle(() => rejectStep(err));
+              return;
+            }
+          }
+        }
+
+        await new Promise((r) => setTimeout(r, 5_000));
       }
     };
 

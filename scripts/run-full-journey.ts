@@ -60,6 +60,7 @@ async function runCapOrder(
   label: string,
   serviceId: string,
   requirements: string,
+  timeoutMs = 180_000,
 ): Promise<Record<string, unknown>> {
   return new Promise((resolveStep, rejectStep) => {
     let orderId: string | undefined;
@@ -74,8 +75,8 @@ async function runCapOrder(
     };
 
     const timer = setTimeout(() => {
-      settle(() => rejectStep(new Error(`${label}: timed out after 3 min`)));
-    }, 180_000);
+      settle(() => rejectStep(new Error(`${label}: timed out after ${timeoutMs / 1000}s`)));
+    }, timeoutMs);
 
     const finishFromDelivery = async (id: string) => {
       const delivery = await client.getDelivery(id);
@@ -90,9 +91,9 @@ async function runCapOrder(
       settle(() => resolveStep(parsed));
     };
 
-    const onOrderCreated = async (event: { negotiation_id?: string; order_id?: string }) => {
-      if (event.negotiation_id !== negotiationId || !event.order_id) return;
-      orderId = event.order_id;
+    const payOrder = async (id: string) => {
+      if (orderId) return;
+      orderId = id;
       console.log(`  order ${orderId} — paying…`);
       try {
         const pay = await client.payOrder(orderId);
@@ -100,6 +101,11 @@ async function runCapOrder(
       } catch (err) {
         settle(() => rejectStep(err instanceof Error ? err : new Error(String(err))));
       }
+    };
+
+    const onOrderCreated = async (event: { negotiation_id?: string; order_id?: string }) => {
+      if (event.negotiation_id !== negotiationId || !event.order_id) return;
+      await payOrder(event.order_id);
     };
 
     stream.on(EventType.OrderCreated, onOrderCreated);
@@ -114,23 +120,42 @@ async function runCapOrder(
     });
 
     const poll = async () => {
-      for (let i = 0; i < 36; i++) {
+      const ticks = Math.ceil(timeoutMs / 5_000);
+      for (let i = 0; i < ticks; i++) {
         if (settled) return;
-        await new Promise((r) => setTimeout(r, 5_000));
-        if (!orderId) continue;
-        try {
-          const order = await client.getOrder(orderId);
-          if (order.status === "completed" || order.status === "delivered") {
-            await finishFromDelivery(orderId);
-            return;
-          }
-        } catch (err) {
-          if (settled) return;
-          if (err instanceof Error && err.message.includes("delivery failed")) {
-            settle(() => rejectStep(err));
-            return;
+
+        if (!orderId && negotiationId) {
+          try {
+            const neg = await client.getNegotiation(negotiationId);
+            if (neg.status === "rejected") {
+              settle(() => rejectStep(new Error(`${label}: negotiation rejected`)));
+              return;
+            }
+            if (neg.status === "accepted" && neg.orderId) {
+              await payOrder(neg.orderId);
+            }
+          } catch {
+            // retry on next tick
           }
         }
+
+        if (orderId) {
+          try {
+            const order = await client.getOrder(orderId);
+            if (order.status === "completed" || order.status === "delivered") {
+              await finishFromDelivery(orderId);
+              return;
+            }
+          } catch (err) {
+            if (settled) return;
+            if (err instanceof Error && err.message.includes("delivery failed")) {
+              settle(() => rejectStep(err));
+              return;
+            }
+          }
+        }
+
+        await new Promise((r) => setTimeout(r, 5_000));
       }
     };
 
@@ -204,6 +229,7 @@ async function main(): Promise<void> {
         "createEnsName",
         ensServiceId,
         buildEnsRequirements(JOURNEY_ORG),
+        600_000,
       );
 
       const names =

@@ -10,7 +10,8 @@
     "build": "tsc",
     "build:prod": "npm run typecheck && npm run build",
     "typecheck": "tsc --noEmit",
-    "journey": "tsx scripts/run-full-journey.ts"
+    "journey": "tsx scripts/run-full-journey.ts",
+    "verify:flow": "tsx scripts/verify-flow.ts"
   },
   "dependencies": {
     "@croo-network/sdk": "^0.2.1",
