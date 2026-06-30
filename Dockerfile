@@ -24,6 +24,10 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --from=builder /app/dist ./dist
 
+RUN mkdir -p /app/data/policies && chown -R remifi:remifi /app/data
+
+ENV REMIFI_POLICY_DIR=/app/data/policies
+
 USER remifi
 
 CMD ["node", "dist/index.js"]
