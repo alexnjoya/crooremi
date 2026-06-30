@@ -23,10 +23,6 @@ const PRODUCTION_REQUIRED: RequiredInProd[] = [
     hint: "Agent Store → ENS Forward & Reverse Resolver service ID",
   },
   {
-    key: "PROVIDER_AA_WALLET_ADDRESS",
-    hint: "CROO dashboard → AA Wallet Address (fund-transfer receive address)",
-  },
-  {
     key: "ENS_REGISTRAR_PRIVATE_KEY",
     hint: "Operator wallet — pays ENS registration gas on Base",
   },

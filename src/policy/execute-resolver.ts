@@ -1,4 +1,5 @@
-import { env } from "../config.js";
+import type { AgentClient } from "@croo-network/sdk";
+import { getProviderAaWalletAddress } from "../chain/provider-wallet.js";
 import { buildExecuteBatchPlan, executeBatchSchema } from "./execute-batch.js";
 import { interpretExecutePayrollText } from "./llm.js";
 import {
@@ -52,16 +53,8 @@ export async function parseExecutePayrollPlan(
 
 /** Provider AA wallet receives payroll principal at accept. */
 export async function resolveExecuteFundAddress(
+  client: AgentClient,
   _requirements: string,
 ): Promise<`0x${string}`> {
-  const address = env.PROVIDER_AA_WALLET_ADDRESS?.trim();
-  if (!address) {
-    throw new Error(
-      "PROVIDER_AA_WALLET_ADDRESS is required — copy AA Wallet Address from CROO dashboard",
-    );
-  }
-  if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
-    throw new Error("PROVIDER_AA_WALLET_ADDRESS must be a valid 0x address");
-  }
-  return address.toLowerCase() as `0x${string}`;
+  return getProviderAaWalletAddress(client);
 }

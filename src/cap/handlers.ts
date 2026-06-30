@@ -136,7 +136,7 @@ export async function acceptNegotiation(
   const { negotiationId, serviceId } = negotiation;
 
   if (isExecutePaymentService(serviceId)) {
-    const fundAddress = await resolveExecuteFundAddress(negotiation.requirements);
+    const fundAddress = await resolveExecuteFundAddress(client, negotiation.requirements);
     const result = await client.acceptNegotiationWithFundAddress(
       negotiationId,
       fundAddress,
