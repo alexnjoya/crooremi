@@ -23,6 +23,10 @@ const PRODUCTION_REQUIRED: RequiredInProd[] = [
     hint: "Agent Store → ENS Forward & Reverse Resolver service ID",
   },
   {
+    key: "PROVIDER_AA_WALLET_ADDRESS",
+    hint: "CROO dashboard → AA Wallet Address (fund-transfer receive address)",
+  },
+  {
     key: "ENS_REGISTRAR_PRIVATE_KEY",
     hint: "Operator wallet — pays ENS registration gas on Base",
   },
@@ -49,6 +53,12 @@ export function validateStartup(): void {
 
   if (!env.DATABASE_URL) {
     errors.push("DATABASE_URL is required (Neon Postgres — policy store for execution)");
+  }
+
+  if (!env.ANTHROPIC_API_KEY && !env.OPENAI_API_KEY) {
+    errors.push(
+      "ANTHROPIC_API_KEY or OPENAI_API_KEY is required (LangChain smart parsing on all services)",
+    );
   }
 
   if (errors.length > 0) {

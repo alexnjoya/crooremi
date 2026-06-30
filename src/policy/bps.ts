@@ -32,7 +32,7 @@ export function formatRemainderNote(remainderBps: number): string {
   const pctLabel = Number.isInteger(pct) ? `${pct}%` : `${pct.toFixed(2)}%`;
   return (
     `${pctLabel} (${remainderBps} bps) is unallocated — it stays with the payer ` +
-    "and is not sent during execution. Hire USDC Split Execution only for listed recipients."
+    "and is not included in payroll execution fund amount."
   );
 }
 

@@ -9,10 +9,11 @@ Remifi sits between **CROO CAP** (commerce / hiring) and **Base** (USDC settleme
 | Path | Role |
 |------|------|
 | `src/cap/server.ts` | CAP SDK bootstrap, WebSocket, order listeners |
-| `src/cap/handlers.ts` | Route paid orders to policy / ENS / settlement |
+| `src/cap/handlers.ts` | Route paid orders to policy / ENS / payroll |
 | `src/policy/interpreter.ts` | JSON or natural language → `SplitPolicy` |
-| `src/policy/ens-*.ts` | Base Names registration and subnames |
-| `src/chain/croo-settlement.ts` | `executePaymentJob` delivery from CROO `payTxHash` |
+| `src/policy/ens-*.ts` | Base Names registration, subnames, resolver |
+| `src/policy/execute-batch.ts` | Policy → payroll legs from `totalUsdc` |
+| `src/chain/payroll-settlement.ts` | Payroll delivery from CROO order fields |
 
 ## Settlement model
 
@@ -20,19 +21,20 @@ Remifi sits between **CROO CAP** (commerce / hiring) and **Base** (USDC settleme
 |---------|----------------|
 | `createPolicy` | None (schema only) |
 | `createEnsName` | None (ENS txs use operator ETH) |
-| `executePaymentJob` | **CROO** via `payOrder` → `recipient.address` set at accept |
+| `resolveEnsName` | None (read-only lookups) |
+| `executePaymentJob` | **CROO SDK** — `payOrder` → AA wallet, `deliverOrder` completes payroll |
 
-No provider private key signs USDC transfers for payouts.
+`PROVIDER_AA_WALLET_ADDRESS` is the dashboard AA wallet address (no private key in Remifi).
 
-## Order flow
+## Order flow (executePaymentJob)
 
 ```
-NegotiateOrder → AcceptNegotiation → PayOrder (USDC)
-→ order_paid → Remifi executes → DeliverOrder (Schema JSON)
+NegotiateOrder (policyId + totalUsdc, fundAmount + fundToken)
+→ AcceptNegotiationWithFundAddress(provider AA wallet)
+→ PayOrder (CROO signs — principal → AA wallet)
+→ order_paid → DeliverOrder (CROO SDK)
 → order_completed
 ```
-
-`executePaymentJob` uses `AcceptNegotiationWithFundAddress(recipient)`.
 
 ## Phase 2 (not in MVP)
 

@@ -34,66 +34,43 @@ export type EnsSubnameProvision = {
 export type CreatePolicyDelivery = {
   policyId: string;
   policy: Omit<SplitPolicy, "id"> & { recipients: SplitRecipient[] };
-  /** Sum of recipient bps (≤ 10000). */
   allocatedBps: number;
-  /** Unallocated share when allocatedBps < 10000. */
   remainderBps: number;
-  /** Set when remainderBps > 0 — explains funds left with payer. */
   remainderNote?: string;
-  /** Ready-to-hire execution payloads — copy each step to USDC Split Execution. */
   executionGuide?: ExecutionGuide;
-  /** Where this step fits in the 3-step Remifi flow. */
   journeyGuide?: PolicyJourneyGuide;
   ensSubnames?: EnsSubnameProvision[];
   ensParent?: string;
   ensParentRegistration?: EnsParentRegistration;
 };
 
-export type ExecuteRequirementsDirect = {
-  policyId: string;
-  recipient: {
-    address: `0x${string}`;
-    label: string;
-    amount: string;
-  };
-};
-
-export type ExecuteRequirementsByReference = {
+export type ExecuteRequirementsPayroll = {
   policyId: string;
   totalUsdc: string;
-  recipient?: string;
-  recipientIndex?: number;
-  /** Inline snapshot if policy store miss (e.g. after Railway redeploy). */
-  policy?: {
-    recipients: Array<{
-      address: `0x${string}`;
-      label: string;
-      bps: number;
-    }>;
-  };
 };
 
-export type ExecutionHireGuide = {
-  step: number;
-  service: "USDC Split Execution";
-  /** Self-contained direct format — works without policy store lookup. */
-  requirements: ExecuteRequirementsDirect;
-  recipientAddress: `0x${string}`;
-  amount: string;
-  /** Flat service fee in 6-decimal USDC units (default 1.00 USDC). */
+export type ExecutionPayrollGuide = {
+  requirements: ExecuteRequirementsPayroll;
+  fundAmount: string;
+  fundToken: string;
   serviceFeeUsdc: string;
-  /** Principal + service fee the buyer pays for this hire. */
   estimatedPayUsdc: string;
+  recipientCount: number;
+  recipients: Array<{
+    label: string;
+    address: `0x${string}`;
+    bps: number;
+    amount: string;
+  }>;
+  note: string;
 };
 
 export type ExecutionGuide = {
   totalUsdc: string;
-  hires: ExecutionHireGuide[];
-  note: string;
+  payroll: ExecutionPayrollGuide;
   remainderBps?: number;
 };
 
-/** Persisted policy record for execute-by-reference lookups. */
 export type StoredPolicy = CreatePolicyDelivery & {
   createdAt: string;
 };
@@ -135,10 +112,31 @@ export type PolicyJourneyGuide = {
   flow: "ENS → Policy → Execution";
   previousService: "ENS Payout Identity";
   nextService: "USDC Split Execution";
+  nextStep?: JourneyNextStep;
   note: string;
 };
 
-/** Single-recipient payout — CROO routes USDC at payOrder time. */
+export type ExecuteBatchInput = {
+  policyId: string;
+  totalUsdc: string;
+  policy?: {
+    recipients: Array<{
+      address: `0x${string}`;
+      label: string;
+      bps: number;
+    }>;
+  };
+};
+
+export type ExecuteBatchPlan = {
+  policyId: string;
+  totalUsdc: string;
+  legs: ExecutePayoutLeg[];
+  fundAmount: string;
+  allocatedBps: number;
+  remainderBps: number;
+};
+
 export type ExecutePayoutLeg = {
   policyId: string;
   recipient: {
@@ -151,12 +149,16 @@ export type ExecutePayoutLeg = {
 export type ExecutePaymentDelivery = {
   policyId: string;
   totalUsdc: string;
+  fundTxHash: string;
+  /** CROO deliverOrder tx — also on `order.deliverTxHash` after completion. */
+  deliverTxHash?: string;
   txHashes: string[];
   recipients: Array<{
     label: string;
+    address: `0x${string}`;
     amount: string;
-    txHash: string;
+    txHash?: string;
   }>;
   baseExplorer: string;
-  settlement: "croo_direct";
+  settlement: "croo_payroll";
 };

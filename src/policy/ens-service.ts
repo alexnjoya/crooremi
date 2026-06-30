@@ -3,6 +3,13 @@ import { baseExplorerTx, env } from "../config.js";
 import { ensureUserOrg, resolveUserOrg } from "./ens-org.js";
 import { ensureSubname } from "./ens-subnames.js";
 import { resolveAddressInput } from "./ens.js";
+import { interpretCreateEnsText, type LlmCreateEnsDraft } from "./llm.js";
+import {
+  hasLlmKeys,
+  llmRequiredError,
+  tryParseJson,
+  unwrapNaturalLanguage,
+} from "./requirements-utils.js";
 import type { CreateEnsDelivery } from "./types.js";
 
 const subnameEntrySchema = z.object({
@@ -21,16 +28,36 @@ const createEnsBatchSchema = z.object({
   names: z.array(subnameEntrySchema).min(1),
 });
 
-function tryParseJson(raw: string): unknown {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
+async function provisionFromLlmDraft(
+  draft: LlmCreateEnsDraft,
+): Promise<CreateEnsDelivery | { org: string; orgLabel: string; names: CreateEnsDelivery[] }> {
+  const { label, domain } = resolveUserOrg(draft.org);
+  const orgRegistration = await ensureUserOrg(draft.org);
+
+  if (draft.names && draft.names.length > 0) {
+    const names: CreateEnsDelivery[] = [];
+    for (const item of draft.names) {
+      names.push(
+        await provisionSubname(domain, label, item.subname, item.address, orgRegistration),
+      );
+    }
+    return { org: domain, orgLabel: label, names };
   }
+
+  if (!draft.address) {
+    throw new Error("createEnsName requires an address for the org or subname");
+  }
+
+  if (!draft.subname) {
+    return provisionOrgRoot(domain, label, draft.address, orgRegistration);
+  }
+
+  return provisionSubname(domain, label, draft.subname, draft.address, orgRegistration);
 }
 
 /**
  * createEnsName — user org (e.g. acme → acme.base.eth) + optional subnames.
+ * LangChain interprets plain text and messy JSON when AI keys are configured.
  */
 export async function createEnsFromRequirements(
   requirements: string,
@@ -41,10 +68,18 @@ export async function createEnsFromRequirements(
   }
 
   const asJson = tryParseJson(trimmed);
+
   if (asJson === null) {
-    throw new Error(
-      'createEnsName requires JSON, e.g. { "org": "acme", "subname": "payroll", "address": "0x..." }',
-    );
+    return provisionFromLlmDraft(await interpretCreateEnsText(trimmed));
+  }
+
+  const naturalLanguage = unwrapNaturalLanguage(asJson);
+  if (naturalLanguage !== null) {
+    return provisionFromLlmDraft(await interpretCreateEnsText(naturalLanguage));
+  }
+
+  if (hasLlmKeys()) {
+    return provisionFromLlmDraft(await interpretCreateEnsText(trimmed));
   }
 
   if (createEnsBatchSchema.safeParse(asJson).success) {
@@ -60,15 +95,21 @@ export async function createEnsFromRequirements(
     return { org: domain, orgLabel: label, names };
   }
 
-  const single = createEnsSchema.parse(asJson);
-  const { label, domain } = resolveUserOrg(single.org);
-  const orgRegistration = await ensureUserOrg(single.org);
+  if (createEnsSchema.safeParse(asJson).success) {
+    const single = createEnsSchema.parse(asJson);
+    const { label, domain } = resolveUserOrg(single.org);
+    const orgRegistration = await ensureUserOrg(single.org);
 
-  if (!single.subname) {
-    return provisionOrgRoot(domain, label, single.address, orgRegistration);
+    if (!single.subname) {
+      return provisionOrgRoot(domain, label, single.address, orgRegistration);
+    }
+
+    return provisionSubname(domain, label, single.subname, single.address, orgRegistration);
   }
 
-  return provisionSubname(domain, label, single.subname, single.address, orgRegistration);
+  throw new Error(
+    `${llmRequiredError("createEnsName")} Expected { "org": "acme", "subname": "payroll", "address": "0x..." }.`,
+  );
 }
 
 async function provisionOrgRoot(

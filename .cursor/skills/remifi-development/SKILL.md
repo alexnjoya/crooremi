@@ -28,7 +28,7 @@ Callable AI agent on **CROO CAP** that receives USDC on **Base** and splits it t
 | Chain | viem on Base |
 | Stablecoin | USDC only |
 | Demo UI | Next.js (thin) — optional |
-| Settlement | CROO direct via CAP payOrder |
+| Settlement | CROO SDK `payOrder` + `deliverOrder` (payroll) |
 
 ## CROO vs Base
 
@@ -43,24 +43,21 @@ Callable AI agent on **CROO CAP** that receives USDC on **Base** and splits it t
 ```
 hackathon/                  # repo root
 ├── remifi.md               # product plan
-├── devplan.md              # structure & build order
-├── agent/src/{cap,policy,chain}/   # core — build here first
-├── web/                    # demo UI — after agent works
+├── src/{cap,policy,chain}/ # core provider
+├── web/                    # demo UI placeholder
 ├── docs/                   # CAP_INTEGRATION, AGENT_STORE, DEMO_SCRIPT
-├── contracts/              # Phase 2 only
-└── scripts/
+└── scripts/                # verify-flow, journey, railway sync
 ```
 
 ## MVP build order
 
 ```
-1. CAP provider online (fork SDK example)
-2. policy/interpreter.ts — NL or JSON → SplitPolicy
-3. chain/croo-settlement.ts — CROO direct USDC proof from payTxHash
-4. cap/handlers.ts — createPolicy + executePaymentJob services
-5. smoke test + second requester agent
-6. web/ demo page (optional polish)
-7. docs + README + Store listing + video
+1. CAP provider online
+2. policy/interpreter.ts + llm.ts — LangChain policy parsing
+3. chain/payroll-settlement.ts — CROO SDK payroll delivery
+4. cap/handlers.ts — four CAP services
+5. npm run verify:flow + npm run journey
+6. docs + README + Store listing + video
 ```
 
 ## Code conventions

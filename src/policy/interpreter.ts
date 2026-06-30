@@ -1,6 +1,5 @@
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
-import { env } from "../config.js";
 import {
   formatRemainderNote,
   percentToBps,
@@ -14,6 +13,12 @@ import {
   DEFAULT_GUIDE_TOTAL_USDC,
 } from "./execution-guide.js";
 import { interpretPolicyText } from "./llm.js";
+import {
+  hasLlmKeys,
+  llmRequiredError,
+  tryParseJson,
+  unwrapNaturalLanguage,
+} from "./requirements-utils.js";
 import type {
   CreatePolicyDelivery,
 } from "./types.js";
@@ -32,8 +37,6 @@ type PolicyDraft = {
 };
 
 const addressOrEnsSchema = z.string().min(1);
-
-const NL_JSON_KEYS = ["text", "requirements", "input", "prompt", "message"] as const;
 
 const recipientSchema = z
   .object({
@@ -132,42 +135,8 @@ function normalizePolicyBody(
   );
 }
 
-function tryParseJson(raw: string): unknown {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
-function hasLlmKeys(): boolean {
-  return Boolean(env.ANTHROPIC_API_KEY || env.OPENAI_API_KEY);
-}
-
-/** Agent Store often wraps NL in Schema JSON — unwrap before structured parse. */
-function unwrapNaturalLanguage(json: unknown): string | null {
-  if (typeof json !== "object" || json === null || Array.isArray(json)) {
-    return null;
-  }
-
-  const record = json as Record<string, unknown>;
-  if (record.policy || record.recipients) {
-    return null;
-  }
-
-  for (const key of NL_JSON_KEYS) {
-    const value = record[key];
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
-    }
-  }
-
-  return null;
-}
-
 /**
- * Machine-readable JSON — explicit recipients with address, label, and bps/percent.
- * Skips LLM for speed and determinism when buyers send perfect Schema input.
+ * Machine-readable JSON fallback when no AI keys are configured.
  */
 function isMachineStructuredPolicy(json: unknown): boolean {
   if (typeof json !== "object" || json === null || Array.isArray(json)) {
@@ -209,10 +178,7 @@ async function interpretNaturalLanguage(
   guideTotalUsdc: string,
 ): Promise<CreatePolicyDelivery> {
   if (!hasLlmKeys()) {
-    throw new Error(
-      "Natural-language createPolicy requires ANTHROPIC_API_KEY or OPENAI_API_KEY. " +
-        "Send JSON with recipients (address, label, bps/percent), or add an AI key to .env.",
-    );
+    throw new Error(llmRequiredError("createPolicy"));
   }
 
   const draft = await interpretPolicyText(text);
@@ -275,7 +241,6 @@ export async function interpretPolicyFromRequirements(
   const guideTotalUsdc = extractGuideTotalUsdc(trimmed);
   const asJson = tryParseJson(trimmed);
 
-  // Plain text or JSON that is not machine-structured → LLM (when keys exist).
   if (asJson === null) {
     return interpretNaturalLanguage(trimmed, guideTotalUsdc);
   }
@@ -285,12 +250,13 @@ export async function interpretPolicyFromRequirements(
     return interpretNaturalLanguage(naturalLanguage, guideTotalUsdc);
   }
 
-  if (isMachineStructuredPolicy(asJson)) {
-    return parseStructuredPolicy(asJson, guideTotalUsdc);
-  }
-
+  // LangChain-first when AI keys are configured — interprets JSON, partial JSON, and intent.
   if (hasLlmKeys()) {
     return interpretNaturalLanguage(trimmed, guideTotalUsdc);
+  }
+
+  if (isMachineStructuredPolicy(asJson)) {
+    return parseStructuredPolicy(asJson, guideTotalUsdc);
   }
 
   try {
@@ -298,9 +264,6 @@ export async function interpretPolicyFromRequirements(
   } catch (structuredError) {
     const hint =
       structuredError instanceof Error ? structuredError.message : String(structuredError);
-    throw new Error(
-      `${hint} Add ANTHROPIC_API_KEY or OPENAI_API_KEY to .env for smart parsing, ` +
-        "or send JSON with recipients: [{ address, label, bps|percent }].",
-    );
+    throw new Error(`${hint} ${llmRequiredError("createPolicy")}`);
   }
 }

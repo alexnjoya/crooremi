@@ -1,5 +1,6 @@
 import { EventType } from "@croo-network/sdk";
 import { setProviderOnline, stopHealthServer } from "../health.js";
+import { closePolicyDatabase } from "../policy/database.js";
 import { createAgentClient } from "./client.js";
 import {
   acceptNegotiation,
@@ -15,10 +16,13 @@ function sleep(ms: number): Promise<void> {
 }
 
 function registerShutdownHandlers(): void {
-  const shutdown = () => {
+  const shutdown = async () => {
     console.log("[remifi] shutting down");
     setProviderOnline(false);
     stopHealthServer();
+    await closePolicyDatabase().catch((err) => {
+      console.error("[remifi] database close error:", err);
+    });
     process.exit(0);
   };
 

@@ -40,37 +40,22 @@ const RECIPIENTS = [
   },
 ];
 
-type ExecutionHireGuide = {
-  step: number;
-  amount?: string;
-  requirements: {
-    policyId: string;
-    recipient:
-      | string
-      | { address: string; label: string; amount: string };
-  };
-};
-
-type CapOrderFund = {
+type ExecutionPayrollGuide = {
+  requirements: { policyId: string; totalUsdc: string };
   fundAmount: string;
   fundToken: string;
+  recipientCount: number;
 };
-
-function hireLabel(hire: ExecutionHireGuide): string {
-  const r = hire.requirements.recipient;
-  return typeof r === "string" ? r : r.label;
-}
 
 type JourneyNextStep = {
   service: string;
   requirements: Record<string, unknown>;
 };
 
-function fundAmountFromHire(hire: ExecutionHireGuide): string | undefined {
-  if (hire.amount) return hire.amount;
-  const r = hire.requirements.recipient;
-  return typeof r === "object" ? r.amount : undefined;
-}
+type CapOrderFund = {
+  fundAmount: string;
+  fundToken: string;
+};
 
 async function runCapOrder(
   client: AgentClient,
@@ -331,39 +316,33 @@ async function main(): Promise<void> {
     }
 
     const execGuide = policyDelivery.executionGuide as
-      | { hires: ExecutionHireGuide[] }
+      | { payroll: ExecutionPayrollGuide }
       | undefined;
-    const hires = execGuide?.hires ?? [];
+    const payroll = execGuide?.payroll;
 
-    if (hires.length === 0) {
-      throw new Error("Policy delivery missing executionGuide.hires");
+    if (!payroll) {
+      throw new Error("Policy delivery missing executionGuide.payroll");
     }
 
-    console.log(`  → ${hires.length} execution hire(s) queued\n`);
+    console.log(
+      `  → payroll: ${payroll.recipientCount} recipient(s), fund ${payroll.fundAmount} base units\n`,
+    );
     step += 1;
 
-    for (const hire of hires) {
-      const label = hireLabel(hire);
-      const legAmount = fundAmountFromHire(hire);
-      if (!legAmount) {
-        throw new Error(`Execution hire for ${label} missing recipient.amount`);
-      }
-      console.log(`── Step ${step} · Execute · ${label} (${legAmount} base units) ──`);
-      const execDelivery = await runCapOrder(
-        client,
-        stream,
-        `execute-${label}`,
-        executeServiceId,
-        JSON.stringify(hire.requirements),
-        180_000,
-        { fundAmount: legAmount, fundToken: usdcAddress },
-      );
-      const txHashes = execDelivery.txHashes as string[] | undefined;
-      console.log(`  ✓ tx: ${txHashes?.[0] ?? "n/a"}\n`);
-      step += 1;
-    }
+    console.log(`── Step ${step} · Execute Payroll ──`);
+    const execDelivery = await runCapOrder(
+      client,
+      stream,
+      "execute-payroll",
+      executeServiceId,
+      JSON.stringify(payroll.requirements),
+      300_000,
+      { fundAmount: payroll.fundAmount, fundToken: payroll.fundToken },
+    );
+    const txHashes = execDelivery.txHashes as string[] | undefined;
+    console.log(`  ✓ ${txHashes?.length ?? 0} payout tx(s): ${txHashes?.join(", ") ?? "n/a"}\n`);
 
-    console.log("Full journey completed (ENS → Policy → Execution).\n");
+    console.log("Full journey completed (ENS → Policy → Payroll).\n");
   } finally {
     stream.close();
   }

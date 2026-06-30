@@ -3,7 +3,7 @@
 **Programmable USDC splits for agent payroll, treasury, and revenue — hireable on CROO.**
 
 CROO Agent Hackathon · **DeFi / On-chain Ops** (primary) · **Open A2A** (secondary)  
-Settlement: USDC on Base via CAP (CROO direct — no provider signing key for payouts)
+Settlement: USDC on Base via CAP — CROO SDK `payOrder` funds provider AA wallet; `deliverOrder` completes payroll.
 
 ---
 
@@ -12,10 +12,11 @@ Settlement: USDC on Base via CAP (CROO direct — no provider signing key for pa
 | Service | Input | Output |
 |---------|-------|--------|
 | `createEnsName` | JSON | `{ org, ens, address, txHashes }` |
-| `createPolicy` | Text or JSON | `{ policyId, policy }` |
-| `executePaymentJob` | Schema JSON + fund | `{ txHashes, settlement: "croo_direct" }` |
+| `createPolicy` | Text or JSON | `{ policyId, policy, executionGuide.payroll }` |
+| `resolveEnsName` | Text or JSON | Forward/reverse ENS lookups on Base + Ethereum |
+| `executePaymentJob` | Schema JSON + fund | `{ fundTxHash, recipients, settlement: "croo_payroll" }` |
 
-**Typical flow:** `createPolicy` → `executePaymentJob` per recipient (one CAP hire per payout leg).
+**Typical flow:** `createEnsName` → `createPolicy` → **one** `executePaymentJob` hire pays all recipients.
 
 ---
 
@@ -29,6 +30,12 @@ npm run dev            # provider Online on Agent Store
 
 Full setup: [setup.md](./setup.md) · CAP details: [docs/CAP_INTEGRATION.md](./docs/CAP_INTEGRATION.md)
 
+```bash
+npm run verify:flow   # logic + store (no live LLM required for most checks)
+npm run verify:llm    # LangChain on all four services (requires AI key)
+npm run journey       # live CAP + USDC (Railway provider only)
+```
+
 ---
 
 ## Environment
@@ -39,8 +46,11 @@ Full setup: [setup.md](./setup.md) · CAP details: [docs/CAP_INTEGRATION.md](./d
 | `CROO_SERVICE_ID_CREATE_POLICY` | Yes | Agent Store service ID |
 | `CROO_SERVICE_ID_CREATE_ENS` | Yes | Agent Store service ID |
 | `CROO_SERVICE_ID_EXECUTE_PAYMENT` | Yes | Agent Store service ID |
+| `CROO_SERVICE_ID_RESOLVE_ENS` | Yes | ENS resolver service ID |
+| `PROVIDER_AA_WALLET_ADDRESS` | Execute | CROO dashboard AA wallet — fund-transfer receive address |
 | `ENS_REGISTRAR_PRIVATE_KEY` | ENS services | Operator wallet — Base ETH for name gas |
-| `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` | NL policy | Natural-language `createPolicy` |
+| `DATABASE_URL` | Production | Neon Postgres — policy store for execution |
+| `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` | Yes (production) | LangChain smart parsing on all services |
 | `BASE_RPC_URL` | Optional | Default: `https://mainnet.base.org` |
 | `USDC_ADDRESS` | Optional | Default: Base mainnet USDC |
 
@@ -59,7 +69,7 @@ NODE_ENV=production npm start
 curl https://<your-host>/health   # { "ok": true, "provider": "online" }
 ```
 
-`NODE_ENV=production` validates: all three service IDs, `ENS_REGISTRAR_PRIVATE_KEY`, mocks disabled.
+`NODE_ENV=production` validates: all four service IDs, `PROVIDER_AA_WALLET_ADDRESS`, `ENS_REGISTRAR_PRIVATE_KEY`, `DATABASE_URL`, mocks disabled.
 
 ---
 
@@ -67,15 +77,15 @@ curl https://<your-host>/health   # { "ok": true, "provider": "online" }
 
 ```
 Hiring agent → CAP (hire + pay) → Remifi → deliver Schema JSON
-executePaymentJob: CROO payOrder → recipient USDC on Base (tx proof in delivery)
+executePaymentJob: CROO payOrder → provider AA wallet → deliverOrder (CROO SDK)
 createEnsName / createPolicy: operator wallet for Base Names gas only
 ```
 
 | Path | Role |
 |------|------|
 | `src/cap/` | WebSocket provider, handlers |
-| `src/policy/` | Policy interpreter, ENS |
-| `src/chain/croo-settlement.ts` | Execute delivery proof from CROO `payTxHash` |
+| `src/policy/` | Policy interpreter, ENS, payroll planning |
+| `src/chain/payroll-settlement.ts` | Payroll delivery proof from CROO order fields |
 
 ---
 

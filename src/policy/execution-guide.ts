@@ -1,3 +1,4 @@
+import { env } from "../config.js";
 import { amountFromBps } from "./bps.js";
 import type { CreatePolicyDelivery, ExecutionGuide } from "./types.js";
 
@@ -10,39 +11,41 @@ export const EXECUTE_SERVICE_FEE_USDC = "1000000";
 export function buildExecutionGuide(
   delivery: Pick<
     CreatePolicyDelivery,
-    "policyId" | "policy" | "remainderBps"
+    "policyId" | "policy" | "remainderBps" | "allocatedBps"
   >,
   totalUsdc: string = DEFAULT_GUIDE_TOTAL_USDC,
 ): ExecutionGuide {
   const principal = BigInt(totalUsdc);
   const fee = BigInt(EXECUTE_SERVICE_FEE_USDC);
+  const fundAmount = amountFromBps(principal, delivery.allocatedBps);
 
-  const hires = delivery.policy.recipients.map((recipient, index) => {
+  const recipients = delivery.policy.recipients.map((recipient) => {
     const amount = amountFromBps(principal, recipient.bps);
     return {
-      step: index + 1,
-      service: "USDC Split Execution" as const,
-      requirements: {
-        policyId: delivery.policyId,
-        recipient: {
-          address: recipient.address,
-          label: recipient.label,
-          amount: amount.toString(),
-        },
-      },
-      recipientAddress: recipient.address,
+      label: recipient.label,
+      address: recipient.address,
+      bps: recipient.bps,
       amount: amount.toString(),
-      serviceFeeUsdc: EXECUTE_SERVICE_FEE_USDC,
-      estimatedPayUsdc: (amount + fee).toString(),
     };
   });
 
   return {
     totalUsdc,
-    hires,
-    note:
-      "Hire USDC Split Execution once per step. Paste each requirements block exactly — " +
-      "address and amount are pre-filled (no policy lookup needed).",
+    payroll: {
+      requirements: {
+        policyId: delivery.policyId,
+        totalUsdc,
+      },
+      fundAmount: fundAmount.toString(),
+      fundToken: env.USDC_ADDRESS,
+      serviceFeeUsdc: EXECUTE_SERVICE_FEE_USDC,
+      estimatedPayUsdc: (fundAmount + fee).toString(),
+      recipientCount: recipients.length,
+      recipients,
+      note:
+        "Hire USDC Split Execution once with this JSON. Set fund amount to payroll.fundAmount " +
+        "and fund token to Base USDC. CROO SDK payOrder funds the provider AA wallet; deliverOrder completes payroll.",
+    },
     ...(delivery.remainderBps > 0 ? { remainderBps: delivery.remainderBps } : {}),
   };
 }

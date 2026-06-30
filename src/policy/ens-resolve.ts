@@ -4,6 +4,8 @@ import { base, mainnet } from "viem/chains";
 import { z } from "zod";
 import { env } from "../config.js";
 import { getBasenameRegistryOwner } from "./ens-register-base.js";
+import { interpretEnsResolveText } from "./llm.js";
+import { hasLlmKeys, tryParseJson } from "./requirements-utils.js";
 
 const MAX_QUERIES = 10;
 
@@ -96,14 +98,6 @@ function unwrapTextPayload(asJson: unknown): string | null {
   return null;
 }
 
-function tryParseJson(raw: string): unknown {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
 function parseMaybeJsonArray(value: unknown): string[] | undefined {
   if (Array.isArray(value)) {
     return value.map(String);
@@ -137,7 +131,7 @@ const requirementsSchema = z.object({
   reverse: z.union([z.array(z.string()), z.string()]).optional(),
 });
 
-export function parseEnsResolveQueries(requirements: string): NormalizedQuery[] {
+function parseEnsResolveQueriesStrict(requirements: string): NormalizedQuery[] {
   const trimmed = requirements.trim();
   if (!trimmed) {
     throw new Error("ENS resolver requirements cannot be empty");
@@ -226,6 +220,43 @@ export function parseEnsResolveQueries(requirements: string): NormalizedQuery[] 
   }
 
   return queries;
+}
+
+async function parseEnsResolveWithLlm(requirements: string): Promise<NormalizedQuery[]> {
+  const draft = await interpretEnsResolveText(requirements);
+  const queries = draft.queries.map((query) => {
+    const value = query.value.trim();
+    const direction =
+      query.direction ??
+      (isHexAddress(value) ? ("reverse" as const) : ("forward" as const));
+    return {
+      direction,
+      value: direction === "reverse" ? normalizeHexAddress(value) : value,
+    };
+  });
+
+  if (queries.length > MAX_QUERIES) {
+    throw new Error(`ENS resolver accepts at most ${MAX_QUERIES} lookups per hire`);
+  }
+
+  return queries;
+}
+
+export async function parseEnsResolveQueries(
+  requirements: string,
+): Promise<NormalizedQuery[]> {
+  try {
+    return parseEnsResolveQueriesStrict(requirements);
+  } catch (strictError) {
+    if (!hasLlmKeys()) {
+      throw strictError;
+    }
+    try {
+      return await parseEnsResolveWithLlm(requirements);
+    } catch {
+      throw strictError;
+    }
+  }
 }
 
 async function forwardResolveName(name: string): Promise<EnsLookupResult> {
@@ -370,7 +401,7 @@ async function reverseResolveInput(addressInput: string): Promise<EnsLookupResul
 export async function resolveEnsFromRequirements(
   requirements: string,
 ): Promise<EnsResolveDelivery> {
-  const queries = parseEnsResolveQueries(requirements);
+  const queries = await parseEnsResolveQueries(requirements);
   const results: EnsLookupResult[] = [];
 
   for (const query of queries) {

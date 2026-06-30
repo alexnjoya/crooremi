@@ -1,6 +1,6 @@
 import { startProvider } from "./cap/server.js";
 import { startHealthServer } from "./health.js";
-import { initPolicyDatabase } from "./policy/database.js";
+import { closePolicyDatabase, initPolicyDatabase } from "./policy/database.js";
 import { registerProcessHandlers, validateStartup } from "./startup.js";
 
 registerProcessHandlers();
@@ -25,7 +25,8 @@ async function main(): Promise<void> {
   await startProvider();
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   console.error("[remifi] fatal:", err);
+  await closePolicyDatabase().catch(() => {});
   process.exit(1);
 });

@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "journey": "tsx scripts/run-full-journey.ts",
     "verify:flow": "tsx scripts/verify-flow.ts",
+    "verify:llm": "tsx scripts/verify-llm.ts",
     "railway:env": "tsx scripts/sync-railway-env.ts"
   },
   "dependencies": {
@@ -20,7 +21,6 @@
     "@langchain/core": "^0.3.58",
     "@langchain/openai": "^0.5.13",
     "dotenv": "^16.4.7",
-    "langchain": "^0.3.28",
     "pg": "^8.22.0",
     "viem": "^2.31.0",
     "zod": "^3.24.2"

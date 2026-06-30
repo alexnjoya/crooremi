@@ -9,7 +9,7 @@ const repoRoot = resolve(__dirname, "..");
 
 const envPath = resolve(repoRoot, ".env");
 if (existsSync(envPath)) {
-  loadEnv({ path: envPath, override: true });
+  loadEnv({ path: envPath, override: false });
 }
 
 const envSchema = z.object({
@@ -33,7 +33,6 @@ const envSchema = z.object({
   ANTHROPIC_MODEL: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().optional(),
-  ENS_ORG_DOMAIN: z.string().optional(),
   ENS_REGISTRAR_PRIVATE_KEY: z
     .string()
     .optional()
@@ -47,6 +46,10 @@ const envSchema = z.object({
     .optional()
     .transform((value) => value === "true" || value === "1"),
   ENS_REGISTRATION_YEARS: z.coerce.number().int().min(1).max(10).default(1),
+  PROVIDER_AA_WALLET_ADDRESS: z
+    .string()
+    .optional()
+    .transform((value) => (value && value.trim() !== "" ? value.trim() : undefined)),
   DATABASE_URL: z
     .string()
     .optional()

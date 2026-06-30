@@ -94,7 +94,7 @@ export function attachEnsJourneyGuide(
         requirements: policyRequirements,
         note:
           "Hire USDC Split Policy with this JSON. Adjust bps if needed, then use " +
-          "executionGuide from the policy delivery for step 3.",
+          "executionGuide.payroll for step 3.",
       },
     },
   };
@@ -113,10 +113,21 @@ export function attachPolicyJourneyGuide(
     flow: "ENS → Policy → Execution",
     previousService: "ENS Payout Identity",
     nextService: "USDC Split Execution",
+    ...(delivery.executionGuide
+      ? {
+          nextStep: {
+            step: 3,
+            service: "USDC Split Execution",
+            requirements: delivery.executionGuide.payroll.requirements,
+            note:
+              "Hire USDC Split Execution once. Set fund amount to " +
+              "executionGuide.payroll.fundAmount and fund token to Base USDC.",
+          },
+        }
+      : {}),
     note: hasEns
-      ? "ENS names are linked. Hire USDC Split Execution once per executionGuide.hires entry."
-      : "Hire USDC Split Execution once per executionGuide.hires entry (step 3). " +
-        "Optional: run ENS Payout Identity first for human-readable payout names.",
+      ? "ENS names are linked. Run payroll execution (step 3) once for all recipients."
+      : "Run payroll execution (step 3) once — executionGuide.payroll has the JSON.",
   };
 }
 
@@ -127,35 +138,3 @@ export type JourneyRecipient = {
   label: string;
   bps: number;
 };
-
-export function buildEnsBatchRequirements(
-  org: string,
-  recipients: JourneyRecipient[],
-): string {
-  return JSON.stringify({
-    org,
-    names: recipients.map((r) => ({
-      subname: r.subname,
-      address: r.address,
-    })),
-  });
-}
-
-export function buildPolicyRequirements(
-  org: string,
-  recipients: JourneyRecipient[],
-  totalUsdc: string,
-  name?: string,
-): string {
-  return JSON.stringify({
-    org,
-    totalUsdc,
-    name: name ?? `${org} split`,
-    recipients: recipients.map((r) => ({
-      subname: r.subname,
-      address: r.address,
-      label: r.label,
-      bps: r.bps,
-    })),
-  });
-}

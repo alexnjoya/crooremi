@@ -1,12 +1,12 @@
 /**
- * Verifies planupdate.md flow locally (no CAP network).
+ * Verifies Remifi flow locally (no CAP network).
  * Run: npm run verify:flow
  */
 import { resolve } from "node:path";
 import assert from "node:assert/strict";
 import { config as loadEnv } from "dotenv";
 
-loadEnv({ path: resolve(process.cwd(), ".env"), override: true });
+loadEnv({ path: resolve(process.cwd(), ".env"), override: false });
 process.env.CROO_SDK_KEY ??= "croo_sk_verify_flow_test_key_placeholder_00";
 process.env.DEV_MOCK_ENS_SUBNAMES = "true";
 
@@ -15,7 +15,8 @@ const { initPolicyDatabase } = await import("../src/policy/database.js");
 const {
   interpretPolicyFromRequirements,
 } = await import("../src/policy/interpreter.js");
-const { parseExecutePayoutLeg } = await import("../src/policy/execute-resolver.js");
+const { parseExecutePayrollPlan } = await import("../src/policy/execute-resolver.js");
+const { buildExecuteBatchPlan } = await import("../src/policy/execute-batch.js");
 const { parseEnsResolveQueries } = await import("../src/policy/ens-resolve.js");
 const { savePolicy, loadPolicy, toStoredPolicy } = await import("../src/policy/store.js");
 const {
@@ -63,14 +64,15 @@ async function testPolicyCreationAndStore(): Promise<string> {
   assert.equal(delivery.allocatedBps, 9000);
   assert.equal(delivery.remainderBps, 1000);
   assert.ok(delivery.executionGuide);
-  assert.equal(delivery.executionGuide!.hires.length, 2);
-  ok("createPolicy returns policyId, partial bps, executionGuide");
+  assert.equal(delivery.executionGuide!.payroll.recipientCount, 2);
+  assert.equal(delivery.executionGuide!.payroll.fundAmount, "900000");
+  ok("createPolicy returns policyId, partial bps, executionGuide.payroll");
 
-  const hire0 = delivery.executionGuide!.hires[0]!;
-  assert.equal(hire0.requirements.recipient.label, "wallet-a");
-  assert.equal(hire0.requirements.recipient.amount, "300000");
-  assert.equal(hire0.requirements.recipient.address, "0xb98cfac37b8bd7f549789718ac17f8aee7ce0c37");
-  ok("executionGuide computes direct requirements (address + amount)");
+  const payroll = delivery.executionGuide!.payroll;
+  assert.equal(payroll.requirements.policyId, delivery.policyId);
+  assert.equal(payroll.recipients[0]!.amount, "300000");
+  assert.equal(payroll.recipients[1]!.amount, "600000");
+  ok("executionGuide payroll computes fund amount and per-recipient amounts");
 
   delivery.journeyGuide = attachPolicyJourneyGuide(delivery);
   assert.equal(delivery.journeyGuide.step, 2);
@@ -86,46 +88,26 @@ async function testPolicyCreationAndStore(): Promise<string> {
   return delivery.policyId;
 }
 
-async function testExecuteByReference(policyId: string): Promise<void> {
-  const leg = await parseExecutePayoutLeg(
+async function testExecutePayrollPlan(policyId: string): Promise<void> {
+  const plan = await parseExecutePayrollPlan(
     JSON.stringify({
       policyId,
       totalUsdc: "1000000",
-      recipient: "wallet-b",
     }),
   );
 
-  assert.equal(leg.recipient.label, "wallet-b");
-  assert.equal(leg.recipient.address, "0x173dbd987ea65f8dfd2d15ea2780acb615bdd8d9");
-  assert.equal(leg.recipient.amount, "600000");
-  ok("execute by reference resolves address + amount from stored policy");
+  assert.equal(plan.legs.length, 2);
+  assert.equal(plan.fundAmount, "900000");
+  assert.equal(plan.legs[0]!.recipient.label, "wallet-a");
+  assert.equal(plan.legs[1]!.recipient.amount, "600000");
+  ok("payroll execute parses policyId + totalUsdc into all legs");
 
-  const legLegacy = await parseExecutePayoutLeg(
-    JSON.stringify({
-      policyId,
-      recipient: {
-        address: "0xB98cFAC37b8bD7f549789718aC17F8aEE7cE0c37",
-        label: "wallet-a",
-        amount: "300000",
-      },
-    }),
-  );
-  assert.equal(legLegacy.recipient.amount, "300000");
-  ok("legacy direct execute format still works");
-
-  // Direct format works without policy store
-  const legDirect = await parseExecutePayoutLeg(
-    JSON.stringify({
-      policyId,
-      recipient: {
-        address: "0xB98cFAC37b8bD7f549789718aC17F8aEE7cE0c37",
-        label: "wallet-a",
-        amount: "300000",
-      },
-    }),
-  );
-  assert.equal(legDirect.recipient.amount, "300000");
-  ok("direct requirements work without policy store");
+  const fromStore = await buildExecuteBatchPlan({
+    policyId,
+    totalUsdc: "1000000",
+  });
+  assert.equal(fromStore.legs.length, 2);
+  ok("buildExecuteBatchPlan loads policy from store");
 }
 
 function testEnsJourneyGuide(): void {
@@ -190,7 +172,7 @@ async function testNlJsonUnwrap(): Promise<void> {
 }
 
 async function testEnsResolveParsing(): Promise<void> {
-  const queries = parseEnsResolveQueries(
+  const queries = await parseEnsResolveQueries(
     JSON.stringify({
       queries: [
         { name: "blockdevre.base.eth" },
@@ -205,7 +187,7 @@ async function testEnsResolveParsing(): Promise<void> {
   assert.equal(queries[2]?.direction, "reverse");
   ok("ENS resolver parses queries array from requirements");
 
-  const fromText = parseEnsResolveQueries(
+  const fromText = await parseEnsResolveQueries(
     JSON.stringify({ text: "blockdevrel.base.eth" }),
   );
   assert.equal(fromText.length, 1);
@@ -213,24 +195,24 @@ async function testEnsResolveParsing(): Promise<void> {
   assert.equal(fromText[0]?.value, "blockdevrel.base.eth");
   ok("ENS resolver accepts { text: \"name.base.eth\" }");
 
-  const fromAddress = parseEnsResolveQueries(
+  const fromAddress = await parseEnsResolveQueries(
     JSON.stringify({ text: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045" }),
   );
   assert.equal(fromAddress[0]?.direction, "reverse");
   ok("ENS resolver accepts { text: \"0x...\" } for reverse lookup");
 
-  const plain = parseEnsResolveQueries("vitalik.eth");
+  const plain = await parseEnsResolveQueries("vitalik.eth");
   assert.equal(plain[0]?.direction, "forward");
   ok("ENS resolver accepts plain text name");
 }
 
 async function main(): Promise<void> {
-  console.log("\nRemifi flow verification (planupdate.md)\n");
+  console.log("\nRemifi flow verification\n");
 
   await initPolicyDatabase();
 
   const policyId = await testPolicyCreationAndStore();
-  await testExecuteByReference(policyId);
+  await testExecutePayrollPlan(policyId);
   testEnsJourneyGuide();
   testEnsResolveParsing();
   await testNlJsonUnwrap();

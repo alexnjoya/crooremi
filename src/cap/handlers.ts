@@ -5,12 +5,12 @@ import {
   type Order,
 } from "@croo-network/sdk";
 import { isCreateEnsService, isCreatePolicyService, isExecutePaymentService, isResolveEnsService } from "../config.js";
-import { executeCrooDirectSettlement } from "../chain/croo-settlement.js";
+import { buildPayrollDelivery } from "../chain/payroll-settlement.js";
 import { createEnsFromRequirements } from "../policy/ens-service.js";
 import { attachEnsJourneyGuide, attachPolicyJourneyGuide } from "../policy/journey-guide.js";
 import { interpretPolicyFromRequirements } from "../policy/interpreter.js";
 import {
-  parseExecutePayoutLeg,
+  parseExecutePayrollPlan,
   resolveExecuteFundAddress,
 } from "../policy/execute-resolver.js";
 import { savePolicy, toStoredPolicy } from "../policy/store.js";
@@ -36,13 +36,14 @@ async function deliverSchema(
   client: AgentClient,
   orderId: string,
   payload: Record<string, unknown>,
-): Promise<void> {
+): Promise<string | undefined> {
   const json = JSON.stringify(payload);
-  await client.deliverOrder(orderId, {
+  const result = await client.deliverOrder(orderId, {
     deliverableType: DeliverableType.Schema,
     deliverableSchema: json,
     deliverableText: json,
   });
+  return result.txHash;
 }
 
 async function handleCreateEnsName(ctx: HandlerContext): Promise<void> {
@@ -62,7 +63,7 @@ async function handleCreatePolicy(ctx: HandlerContext): Promise<void> {
   await savePolicy(toStoredPolicy(delivery));
   log("info", `createPolicy delivered ${delivery.policyId}`, {
     recipients: delivery.policy.recipients.length,
-    executionSteps: delivery.executionGuide?.hires.length ?? 0,
+    payrollRecipients: delivery.executionGuide?.payroll.recipientCount ?? 0,
   });
   await deliverSchema(ctx.client, ctx.orderId, delivery);
 }
@@ -77,13 +78,16 @@ async function handleResolveEnsName(ctx: HandlerContext): Promise<void> {
 }
 
 async function handleExecutePayment(ctx: HandlerContext): Promise<void> {
-  const leg = await parseExecutePayoutLeg(ctx.negotiation.requirements);
-  const delivery = executeCrooDirectSettlement(ctx.order, leg);
-  log("info", `executePaymentJob delivered ${delivery.policyId}`, {
+  const plan = await parseExecutePayrollPlan(ctx.negotiation.requirements);
+  const delivery = buildPayrollDelivery(ctx.order, plan);
+  const deliverTxHash = await deliverSchema(ctx.client, ctx.orderId, delivery);
+
+  log("info", `executePaymentJob payroll delivered ${delivery.policyId}`, {
     settlement: delivery.settlement,
-    txCount: delivery.txHashes.length,
+    fundTxHash: delivery.fundTxHash,
+    deliverTxHash: deliverTxHash ?? delivery.deliverTxHash,
+    recipients: delivery.recipients.length,
   });
-  await deliverSchema(ctx.client, ctx.orderId, delivery);
 }
 
 export async function handleOrderPaid(
