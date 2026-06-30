@@ -1,6 +1,4 @@
 import { z } from "zod";
-import type { Order } from "@croo-network/sdk";
-import { baseExplorerTx } from "../config.js";
 import { resolveAddressInput } from "./ens.js";
 import { interpretInstantUsdcPayText } from "./llm.js";
 import {
@@ -9,7 +7,6 @@ import {
   tryParseJson,
   unwrapNaturalLanguage,
 } from "./requirements-utils.js";
-import type { InstantUsdcPayDelivery } from "./types.js";
 
 export type InstantUsdcPayInput = {
   to: string;
@@ -49,12 +46,6 @@ function parseUsdcAmount(value: unknown): string | null {
     return String(Math.round(value * 1_000_000));
   }
   return null;
-}
-
-function formatUsdcDisplay(baseUnits: string): string {
-  const whole = BigInt(baseUnits);
-  const dollars = Number(whole) / 1_000_000;
-  return dollars.toFixed(6).replace(/\.?0+$/, "") || "0";
 }
 
 function extractFromNaturalLanguage(text: string): InstantUsdcPayInput | null {
@@ -192,51 +183,4 @@ export async function resolveInstantPayFundAddress(
     amount: resolved.amount,
   });
   return resolved.address;
-}
-
-export function buildInstantUsdcPayDelivery(
-  order: Order,
-  resolved: InstantUsdcPayResolved,
-): InstantUsdcPayDelivery {
-  const fundTxHash = order.payTxHash?.trim();
-  if (!fundTxHash) {
-    throw new Error(
-      "Order missing payTxHash — CAP payOrder must complete before delivery",
-    );
-  }
-
-  if (!order.providerFundAddress?.trim()) {
-    throw new Error(
-      "Order missing providerFundAddress — fund-transfer accept must declare recipient",
-    );
-  }
-
-  const expectedFund = BigInt(resolved.amount);
-  if (order.fundAmount && BigInt(order.fundAmount) !== expectedFund) {
-    throw new Error(
-      `Fund amount mismatch: payment needs ${expectedFund} base units, ` +
-        `order fundAmount is ${order.fundAmount}`,
-    );
-  }
-
-  const providerFund = order.providerFundAddress.trim().toLowerCase();
-  if (providerFund !== resolved.address.toLowerCase()) {
-    throw new Error(
-      `Order fund address ${providerFund} does not match recipient ${resolved.address}`,
-    );
-  }
-
-  return {
-    success: true,
-    to: resolved.address,
-    toInput: resolved.to,
-    ens: resolved.ens,
-    amount: resolved.amount,
-    amountUsdc: formatUsdcDisplay(resolved.amount),
-    reference: resolved.reference,
-    fundTxHash,
-    txHash: fundTxHash,
-    baseExplorer: baseExplorerTx(fundTxHash),
-    settlement: "direct_cap",
-  };
 }

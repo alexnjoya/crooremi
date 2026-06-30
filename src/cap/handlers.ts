@@ -6,6 +6,10 @@ import {
 } from "@croo-network/sdk";
 import { isCreateEnsService, isCreatePolicyService, isExecutePaymentService, isInstantUsdcPayService, isResolveEnsService } from "../config.js";
 import { executePayrollSettlement } from "../chain/payroll-settlement.js";
+import {
+  isNonFundServiceAcceptError,
+  settleInstantUsdcPay,
+} from "../chain/instant-pay-settlement.js";
 import { createEnsFromRequirements } from "../policy/ens-service.js";
 import { attachEnsJourneyGuide, attachPolicyJourneyGuide } from "../policy/journey-guide.js";
 import { interpretPolicyFromRequirements } from "../policy/interpreter.js";
@@ -14,7 +18,6 @@ import {
   resolveExecuteFundAddress,
 } from "../policy/execute-resolver.js";
 import {
-  buildInstantUsdcPayDelivery,
   parseInstantUsdcPayRequirements,
   resolveInstantPayFundAddress,
   resolveInstantUsdcPay,
@@ -107,7 +110,7 @@ async function handleInstantUsdcPay(ctx: HandlerContext): Promise<void> {
     fundAmount,
   });
   const resolved = await resolveInstantUsdcPay(parsed);
-  const delivery = buildInstantUsdcPayDelivery(ctx.order, resolved);
+  const delivery = await settleInstantUsdcPay(ctx.order, resolved);
   const deliverTxHash = await deliverSchema(ctx.client, ctx.orderId, delivery);
 
   log("info", `instantUsdcPay delivered → ${delivery.to}`, {
@@ -179,15 +182,23 @@ export async function acceptNegotiation(
   }
 
   if (isInstantUsdcPayService(serviceId)) {
-    const fundAddress = await resolveInstantPayFundAddress(
-      negotiation.requirements,
-      { fundAmount: negotiation.fundAmount },
-    );
-    const result = await client.acceptNegotiationWithFundAddress(
-      negotiationId,
-      fundAddress,
-    );
-    log("info", `accepted instant USDC pay → ${fundAddress} → order ${result.order.orderId}`);
+    try {
+      const fundAddress = await resolveInstantPayFundAddress(
+        negotiation.requirements,
+        { fundAmount: negotiation.fundAmount },
+      );
+      const result = await client.acceptNegotiationWithFundAddress(
+        negotiationId,
+        fundAddress,
+      );
+      log("info", `accepted instant USDC pay → ${fundAddress} → order ${result.order.orderId}`);
+    } catch (err) {
+      if (!isNonFundServiceAcceptError(err)) {
+        throw err;
+      }
+      const result = await client.acceptNegotiation(negotiationId);
+      log("info", `accepted instant USDC pay (wallet settlement) → order ${result.order.orderId}`);
+    }
     return;
   }
 
