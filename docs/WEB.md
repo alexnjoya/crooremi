@@ -23,14 +23,14 @@ You do **not** need a web app for the hackathon. Build this only for demo polish
 
 ## Two build modes
 
-### A. Demo-only (fastest — Lovable)
+### A. Demo-only (fastest)
 
 - Mock parse + mock execute (client state)
 - No backend, no wallet
 - Link: **Hire on CROO** → Agent Store
 - Good for: 5-min video in 1–2 days
 
-See [LOVABLE_UI_BRIEF.md](./LOVABLE_UI_BRIEF.md)
+Run from `web/`: `bun install` then `bun run dev`
 
 ### B. Connected (after agent works)
 
@@ -63,16 +63,16 @@ No login. No wallet connect unless you add optional "paste address for preview o
 
 ## Stack (match repo)
 
-- Next.js in `web/`
+- TanStack Start + Vite in `web/`
 - Tailwind + shadcn/ui
 - viem **read-only** for BaseScan / balance display (optional)
 
 ## Env (`web/.env.local`)
 
 ```bash
-NEXT_PUBLIC_AGENT_STORE_URL=https://agent.croo.network
-NEXT_PUBLIC_BASESCAN_URL=https://sepolia.basescan.org
-NEXT_PUBLIC_AGENT_API_URL=http://localhost:3001   # if mode B
+VITE_AGENT_STORE_URL=https://agent.croo.network
+VITE_BASESCAN_URL=https://sepolia.basescan.org
+VITE_AGENT_HEALTH_URL=http://localhost:3001/health   # if mode B
 ```
 
 No `CROO_SDK_KEY` in the web app — keys stay in `agent/` only.
@@ -94,14 +94,11 @@ No `CROO_SDK_KEY` in the web app — keys stay in `agent/` only.
 
 ```
 web/
-├── app/
-│   ├── page.tsx           # single-page demo
-│   └── api/health/route.ts
-├── components/
-│   ├── PolicyInput.tsx
-│   ├── SplitPreview.tsx
-│   └── ExecutionProof.tsx
-└── lib/
-    ├── mock.ts            # mode A
-    └── api.ts             # mode B
+├── src/
+│   ├── routes/
+│   │   └── index.tsx      # single-page demo
+│   ├── components/
+│   └── lib/
+├── vite.config.ts
+└── package.json
 ```
