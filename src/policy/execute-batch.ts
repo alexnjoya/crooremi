@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { amountFromBps } from "./bps.js";
-import { loadPolicy } from "./store.js";
+import { loadPolicyWithFallback, type PolicyLoadContext } from "./store.js";
 import type { ExecuteBatchInput, ExecuteBatchPlan, ExecutePayoutLeg, SplitRecipient } from "./types.js";
 
 export const executeBatchSchema = z.object({
@@ -24,8 +24,9 @@ export const executeBatchSchema = z.object({
 async function loadRecipients(
   policyId: string,
   inline?: ExecuteBatchInput["policy"],
+  ctx?: PolicyLoadContext,
 ): Promise<SplitRecipient[]> {
-  const stored = await loadPolicy(policyId);
+  const stored = await loadPolicyWithFallback(policyId, ctx);
   if (stored) {
     return stored.policy.recipients;
   }
@@ -43,8 +44,9 @@ async function loadRecipients(
 
 export async function buildExecuteBatchPlan(
   input: ExecuteBatchInput,
+  ctx?: PolicyLoadContext,
 ): Promise<ExecuteBatchPlan> {
-  const recipients = await loadRecipients(input.policyId, input.policy);
+  const recipients = await loadRecipients(input.policyId, input.policy, ctx);
   const total = BigInt(input.totalUsdc);
   const allocatedBps = recipients.reduce((sum, r) => sum + r.bps, 0);
 

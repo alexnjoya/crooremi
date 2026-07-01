@@ -7,6 +7,10 @@ import {
   tryParseJson,
   unwrapNaturalLanguage,
 } from "./requirements-utils.js";
+import {
+  isEvmAddress,
+  parseAgentStoreInstantPayRequirements,
+} from "./store-requirements.js";
 
 export type InstantUsdcPayInput = {
   to: string;
@@ -21,10 +25,13 @@ export type InstantUsdcPayResolved = InstantUsdcPayInput & {
 
 export type InstantUsdcPayParseContext = {
   fundAmount?: string;
+  /** Accept negotiation only needs recipient — amount comes from order fundAmount at delivery. */
+  recipientOnly?: boolean;
 };
 
 const instantPayJsonSchema = z.object({
   to: z.string().min(1).optional(),
+  send: z.string().min(1).optional(),
   recipient: z.string().min(1).optional(),
   address: z.string().min(1).optional(),
   amount: z.union([z.string(), z.number()]).optional(),
@@ -84,16 +91,46 @@ function mergeAmount(
   );
 }
 
+function finalizeInstantPayInput(
+  partial: { to: string; amount?: string; reference?: string },
+  ctx: InstantUsdcPayParseContext,
+): InstantUsdcPayInput {
+  const amount = mergeAmount(partial, ctx);
+  if (!amount && !ctx.recipientOnly) {
+    throw new Error(
+      "Instant USDC Pay could not determine amount — set principal in checkout or include amount in requirements",
+    );
+  }
+  return {
+    to: partial.to.trim(),
+    amount: amount ?? "0",
+    reference: partial.reference,
+  };
+}
+
 export async function parseInstantUsdcPayRequirements(
   requirements: string,
   ctx: InstantUsdcPayParseContext = {},
 ): Promise<InstantUsdcPayInput> {
   const trimmed = requirements.trim();
   if (!trimmed) {
-    throw new Error("Instant USDC Pay requires recipient and amount");
+    throw new Error("Instant USDC Pay requires recipient address");
   }
 
   const asJson = tryParseJson(trimmed);
+
+  // Store UI (fund transfer ON): principal in checkout, recipient only in requirements
+  if (asJson === null) {
+    if (isEvmAddress(trimmed)) {
+      return finalizeInstantPayInput({ to: trimmed }, ctx);
+    }
+    if (ctx.fundAmount) {
+      const fromFund = parseUsdcAmount(ctx.fundAmount);
+      if (fromFund && !trimmed.startsWith("{")) {
+        return { to: trimmed, amount: fromFund };
+      }
+    }
+  }
 
   if (asJson !== null && typeof asJson === "object" && !Array.isArray(asJson)) {
     const naturalLanguage = unwrapNaturalLanguage(asJson);
@@ -101,37 +138,29 @@ export async function parseInstantUsdcPayRequirements(
       return parseInstantUsdcPayRequirements(naturalLanguage, ctx);
     }
 
-    const record = instantPayJsonSchema.parse(asJson);
-    const to = record.to ?? record.recipient ?? record.address;
-    const amount = mergeAmount(
-      {
-        amount:
-          parseUsdcAmount(record.amount) ??
-          parseUsdcAmount(record.totalUsdc) ??
-          parseUsdcAmount(record.principal_amount) ??
-          parseUsdcAmount(record.principalAmount) ??
-          undefined,
-      },
-      ctx,
-    );
-
-    if (to && amount) {
-      return {
-        to: to.trim(),
-        amount,
-        reference: record.reference ?? record.memo,
-      };
+    const fromStore = parseAgentStoreInstantPayRequirements(asJson, {
+      fundAmount: ctx.fundAmount,
+    });
+    if (fromStore) {
+      return finalizeInstantPayInput(fromStore, ctx);
     }
 
-    if (to && ctx.fundAmount) {
-      const fromFund = parseUsdcAmount(ctx.fundAmount);
-      if (fromFund) {
-        return {
-          to: to.trim(),
-          amount: fromFund,
+    const record = instantPayJsonSchema.parse(asJson);
+    const to = record.to ?? record.send ?? record.recipient ?? record.address;
+    if (to) {
+      return finalizeInstantPayInput(
+        {
+          to,
+          amount:
+            parseUsdcAmount(record.amount) ??
+            parseUsdcAmount(record.totalUsdc) ??
+            parseUsdcAmount(record.principal_amount) ??
+            parseUsdcAmount(record.principalAmount) ??
+            undefined,
           reference: record.reference ?? record.memo,
-        };
-      }
+        },
+        ctx,
+      );
     }
   }
 
@@ -175,7 +204,10 @@ export async function resolveInstantPayFundAddress(
   requirements: string,
   ctx: InstantUsdcPayParseContext = {},
 ): Promise<`0x${string}`> {
-  const parsed = await parseInstantUsdcPayRequirements(requirements, ctx);
+  const parsed = await parseInstantUsdcPayRequirements(requirements, {
+    ...ctx,
+    recipientOnly: true,
+  });
   const resolved = await resolveInstantUsdcPay(parsed);
   console.log("[remifi] instant USDC pay accept →", {
     to: resolved.address,

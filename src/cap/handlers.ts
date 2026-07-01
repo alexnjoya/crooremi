@@ -106,9 +106,18 @@ async function handleExecutePayment(ctx: HandlerContext): Promise<void> {
 
 async function handleInstantUsdcPay(ctx: HandlerContext): Promise<void> {
   const fundAmount = ctx.order.fundAmount ?? ctx.negotiation.fundAmount;
+  if (!fundAmount?.trim()) {
+    throw new Error(
+      "Instant USDC Pay order missing fundAmount — buyer must pay principal via fund transfer checkout",
+    );
+  }
   const parsed = await parseInstantUsdcPayRequirements(ctx.negotiation.requirements, {
     fundAmount,
   });
+  if (parsed.amount === "0" || BigInt(parsed.amount) <= 0n) {
+    const fromOrder = fundAmount.trim();
+    parsed.amount = fromOrder;
+  }
   const resolved = await resolveInstantUsdcPay(parsed);
   const delivery = await settleInstantUsdcPay(ctx.order, resolved);
   const deliverTxHash = await deliverSchema(ctx.client, ctx.orderId, delivery);

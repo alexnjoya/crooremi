@@ -10,6 +10,8 @@ import {
   loadPolicyFromDatabase,
   savePolicyToDatabase,
 } from "./database.js";
+import { loadPolicyFromCompletedOrders } from "./policy-lookup.js";
+import type { AgentClient } from "@croo-network/sdk";
 import type { StoredPolicy } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -79,6 +81,40 @@ export async function savePolicy(delivery: StoredPolicy): Promise<void> {
   }
 
   await writeToDisk(delivery);
+}
+
+export type PolicyLoadContext = {
+  client?: AgentClient;
+  requesterAgentId?: string;
+  createPolicyServiceId?: string;
+};
+
+export async function loadPolicyWithFallback(
+  policyId: string,
+  ctx?: PolicyLoadContext,
+): Promise<StoredPolicy | null> {
+  const local = await loadPolicy(policyId);
+  if (local) {
+    return local;
+  }
+
+  if (ctx?.client && ctx.createPolicyServiceId?.trim()) {
+    const fromOrders = await loadPolicyFromCompletedOrders(
+      ctx.client,
+      policyId,
+      ctx.createPolicyServiceId.trim(),
+      ctx.requesterAgentId,
+    );
+    if (fromOrders) {
+      console.log(
+        `[remifi] execute: loaded policy ${policyId} from createPolicy order history`,
+      );
+      await savePolicy(fromOrders);
+      return fromOrders;
+    }
+  }
+
+  return null;
 }
 
 export async function loadPolicy(policyId: string): Promise<StoredPolicy | null> {

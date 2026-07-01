@@ -257,6 +257,40 @@ async function testInstantUsdcPayParsing(): Promise<void> {
   );
   assert.equal(fundFallback.amount, "75000");
   ok("instant USDC pay uses fundAmount when amount omitted");
+
+  const storeUi = await parseInstantUsdcPayRequirements("blockdevrel.base.eth", {
+    fundAmount: "10000",
+  });
+  assert.equal(storeUi.to, "blockdevrel.base.eth");
+  assert.equal(storeUi.amount, "10000");
+  ok("instant USDC pay accepts recipient-only text when Store UI sets principal");
+
+  const storeAddress = await parseInstantUsdcPayRequirements(
+    JSON.stringify({ address: "0xB98cFAC37b8bD7f549789718aC17F8aEE7cE0c37" }),
+    { fundAmount: "100000" },
+  );
+  assert.equal(storeAddress.to, "0xB98cFAC37b8bD7f549789718aC17F8aEE7cE0c37");
+  assert.equal(storeAddress.amount, "100000");
+  ok("instant USDC pay parses Agent Store { address } + checkout principal");
+
+  const storeSend = await parseInstantUsdcPayRequirements(
+    JSON.stringify({ send: "blockdevrel.base.eth", principal_amount: 0.01 }),
+  );
+  assert.equal(storeSend.to, "blockdevrel.base.eth");
+  assert.equal(storeSend.amount, "10000");
+  ok("instant USDC pay parses Agent Store { send, principal_amount }");
+
+  const { resolveInstantPayFundAddress } = await import(
+    "../src/policy/instant-usdc-pay.js"
+  );
+  const fundAddr = await resolveInstantPayFundAddress(
+    JSON.stringify({ address: "0xB98cFAC37b8bD7f549789718aC17F8aEE7cE0c37" }),
+  );
+  assert.equal(
+    fundAddr.toLowerCase(),
+    "0xb98cfac37b8bd7f549789718ac17f8aee7ce0c37",
+  );
+  ok("instant USDC pay accept resolves fund address from address-only schema");
 }
 
 async function testInstantUsdcPayCapSettlement(): Promise<void> {
@@ -293,6 +327,11 @@ async function testInstantUsdcPayCapSettlement(): Promise<void> {
     /requires CROO fund transfer/,
   );
   ok("instant USDC pay rejects orders without CAP fund transfer (no wallet fallback)");
+
+  const { loadPolicyWithFallback } = await import("../src/policy/store.js");
+  const missing = await loadPolicyWithFallback("pol_deadbeef0000");
+  assert.equal(missing, null);
+  ok("loadPolicyWithFallback returns null when policy absent everywhere");
 }
 
 async function main(): Promise<void> {

@@ -5,7 +5,7 @@ import { buildExecuteBatchPlan, executeBatchSchema } from "./execute-batch.js";
 import { DEFAULT_GUIDE_TOTAL_USDC } from "./execution-guide.js";
 import { interpretExecutePayrollText } from "./llm.js";
 import { resolvePolicyIdFromRequester } from "./policy-lookup.js";
-import { loadLatestPolicy } from "./store.js";
+import { loadLatestPolicy, type PolicyLoadContext } from "./store.js";
 import { parseAgentStoreExecuteRequirements } from "./store-requirements.js";
 import {
   hasLlmKeys,
@@ -23,6 +23,18 @@ export type ExecuteParseContext = {
   fundAmount?: string;
   orderCreatedAt?: string;
 };
+
+function policyLoadContext(ctx?: ExecuteParseContext): PolicyLoadContext | undefined {
+  const createPolicyServiceId = env.CROO_SERVICE_ID_CREATE_POLICY?.trim();
+  if (!ctx?.client || !createPolicyServiceId) {
+    return undefined;
+  }
+  return {
+    client: ctx.client,
+    requesterAgentId: ctx.requesterAgentId,
+    createPolicyServiceId,
+  };
+}
 
 function normalizePolicyId(value: string): string | null {
   const trimmed = value.trim();
@@ -138,7 +150,7 @@ async function buildFromLlmDraft(
     ctx,
   );
 
-  return buildExecuteBatchPlan(input);
+  return buildExecuteBatchPlan(input, policyLoadContext(ctx));
 }
 
 async function buildFromStoreJson(
@@ -160,7 +172,7 @@ async function buildFromStoreJson(
     },
     ctx,
   );
-  return buildExecuteBatchPlan(input);
+  return buildExecuteBatchPlan(input, policyLoadContext(ctx));
 }
 
 export async function parseExecutePayrollPlan(
@@ -177,7 +189,10 @@ export async function parseExecutePayrollPlan(
   if (asJson === null) {
     const extracted = extractExecuteInput(trimmed);
     if (extracted) {
-      return buildExecuteBatchPlan(await finalizeExecuteInput(extracted, ctx));
+      return buildExecuteBatchPlan(
+        await finalizeExecuteInput(extracted, ctx),
+        policyLoadContext(ctx),
+      );
     }
     if (!hasLlmKeys()) {
       throw new Error(
@@ -196,7 +211,10 @@ export async function parseExecutePayrollPlan(
   if (naturalLanguage !== null) {
     const extracted = extractExecuteInput(naturalLanguage);
     if (extracted) {
-      return buildExecuteBatchPlan(await finalizeExecuteInput(extracted, ctx));
+      return buildExecuteBatchPlan(
+        await finalizeExecuteInput(extracted, ctx),
+        policyLoadContext(ctx),
+      );
     }
     if (!hasLlmKeys()) {
       throw new Error(
@@ -210,12 +228,16 @@ export async function parseExecutePayrollPlan(
   if (batch.success) {
     return buildExecuteBatchPlan(
       await finalizeExecuteInput(batch.data as ExecuteBatchInput, ctx),
+      policyLoadContext(ctx),
     );
   }
 
   const extracted = extractExecuteInput(trimmed);
   if (extracted) {
-    return buildExecuteBatchPlan(await finalizeExecuteInput(extracted, ctx));
+    return buildExecuteBatchPlan(
+      await finalizeExecuteInput(extracted, ctx),
+      policyLoadContext(ctx),
+    );
   }
 
   if (hasLlmKeys()) {
