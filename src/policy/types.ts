@@ -176,5 +176,5 @@ export type InstantUsdcPayDelivery = {
   fundTxHash: string;
   txHash: string;
   baseExplorer: string;
-  settlement: "direct_cap" | "wallet_instant_pay" | "mock_instant_pay";
+  settlement: "direct_cap" | "mock_instant_pay";
 };

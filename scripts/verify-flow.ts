@@ -259,6 +259,42 @@ async function testInstantUsdcPayParsing(): Promise<void> {
   ok("instant USDC pay uses fundAmount when amount omitted");
 }
 
+async function testInstantUsdcPayCapSettlement(): Promise<void> {
+  const { buildDirectCapInstantPayDelivery } = await import(
+    "../src/chain/instant-pay-settlement.js"
+  );
+
+  const recipient = "0xB98cFAC37b8bD7f549789718aC17F8aEE7cE0c37" as const;
+  const resolved = {
+    to: recipient,
+    amount: "100000",
+    address: recipient,
+  };
+
+  const capOrder = {
+    payTxHash: "0xabc123",
+    providerFundAddress: recipient,
+    fundAmount: "100000",
+  } as import("@croo-network/sdk").Order;
+
+  const delivery = buildDirectCapInstantPayDelivery(capOrder, resolved);
+  assert.equal(delivery.settlement, "direct_cap");
+  assert.equal(delivery.amount, "100000");
+  assert.equal(delivery.txHash, "0xabc123");
+  ok("instant USDC pay builds direct_cap delivery when CAP funds recipient");
+
+  const noFundOrder = {
+    payTxHash: "0xabc123",
+    fundAmount: "0",
+  } as import("@croo-network/sdk").Order;
+
+  assert.throws(
+    () => buildDirectCapInstantPayDelivery(noFundOrder, resolved),
+    /requires CROO fund transfer/,
+  );
+  ok("instant USDC pay rejects orders without CAP fund transfer (no wallet fallback)");
+}
+
 async function main(): Promise<void> {
   console.log("\nRemifi flow verification\n");
 
@@ -270,6 +306,7 @@ async function main(): Promise<void> {
   testEnsJourneyGuide();
   testEnsResolveParsing();
   await testInstantUsdcPayParsing();
+  await testInstantUsdcPayCapSettlement();
   await testNlJsonUnwrap();
 
   console.log(`\n${passed} checks passed.\n`);

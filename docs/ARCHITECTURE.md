@@ -22,7 +22,8 @@ Remifi sits between **CROO CAP** (commerce / hiring) and **Base** (USDC settleme
 | `createPolicy` | None (schema only) |
 | `createEnsName` | None (ENS txs use operator ETH) |
 | `resolveEnsName` | None (read-only lookups) |
-| `executePaymentJob` | **CROO SDK** — `payOrder` → AA wallet, `deliverOrder` completes payroll |
+| `executePaymentJob` | **CROO** → Router (or payout EOA) → multi-recipient split |
+| `instantUsdcPay` | **CROO only** — fund transfer direct to recipient address |
 
 `PROVIDER_AA_WALLET_ADDRESS` is the dashboard AA wallet address (no private key in Remifi).
 

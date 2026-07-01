@@ -20,6 +20,7 @@ CROO_SERVICE_ID_CREATE_ENS=...
 CROO_SERVICE_ID_CREATE_POLICY=...
 CROO_SERVICE_ID_EXECUTE_PAYMENT=...
 CROO_SERVICE_ID_RESOLVE_ENS=...
+CROO_SERVICE_ID_INSTANT_USDC_PAY=...
 PROVIDER_AA_WALLET_ADDRESS=0x...   # Dashboard → Configure → AA Wallet
 ```
 
@@ -92,6 +93,30 @@ PROVIDER_AA_WALLET_ADDRESS=0x...   # Dashboard → Configure → AA Wallet
 Disbursement on-chain proof: `order.deliverTxHash` (also returned from `deliverOrder`).
 
 Use `executionGuide.payroll` from the `createPolicy` delivery for ready-to-copy requirements and fund amounts.
+
+### instantUsdcPay (Instant USDC Pay — CAP direct send)
+
+| Field | Value |
+|-------|-------|
+| Requirements | Text or Schema |
+| Deliverable | Schema |
+| Fund transfer | **ON** (required) |
+
+**CROO sends USDC directly to the recipient** — no Router contract, no provider payout wallet.
+
+```
+NegotiateOrder ("send 0.1 USDC to alice.base.eth")
+→ AcceptNegotiationWithFundAddress(recipient 0x…)
+→ PayOrder (buyer pays principal + fee; CAP routes principal → recipient)
+→ deliverOrder { fundTxHash, settlement: "direct_cap" }
+```
+
+| Service | Settlement path |
+|---------|-----------------|
+| **Instant USDC Pay** | CROO fund transfer → recipient address |
+| **USDC Split Execution** | CROO fund transfer → Router (or payout EOA) → multi-recipient split |
+
+Agent Store **must** have **Require Fund Transfer ON** for Instant USDC Pay.
 
 ## SDK flow (executePaymentJob)
 

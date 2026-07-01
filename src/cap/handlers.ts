@@ -182,22 +182,24 @@ export async function acceptNegotiation(
   }
 
   if (isInstantUsdcPayService(serviceId)) {
+    const fundAddress = await resolveInstantPayFundAddress(
+      negotiation.requirements,
+      { fundAmount: negotiation.fundAmount },
+    );
     try {
-      const fundAddress = await resolveInstantPayFundAddress(
-        negotiation.requirements,
-        { fundAmount: negotiation.fundAmount },
-      );
       const result = await client.acceptNegotiationWithFundAddress(
         negotiationId,
         fundAddress,
       );
-      log("info", `accepted instant USDC pay → ${fundAddress} → order ${result.order.orderId}`);
+      log("info", `accepted instant USDC pay (CAP → recipient) → ${fundAddress} → order ${result.order.orderId}`);
     } catch (err) {
-      if (!isNonFundServiceAcceptError(err)) {
-        throw err;
+      if (isNonFundServiceAcceptError(err)) {
+        throw new Error(
+          "Instant USDC Pay requires Require Fund Transfer ON in Agent Store. " +
+            "CROO sends USDC directly to the recipient — no Router or payout wallet.",
+        );
       }
-      const result = await client.acceptNegotiation(negotiationId);
-      log("info", `accepted instant USDC pay (wallet settlement) → order ${result.order.orderId}`);
+      throw err;
     }
     return;
   }
