@@ -332,6 +332,11 @@ async function testInstantUsdcPayCapSettlement(): Promise<void> {
   const missing = await loadPolicyWithFallback("pol_deadbeef0000");
   assert.equal(missing, null);
   ok("loadPolicyWithFallback returns null when policy absent everywhere");
+
+  const { loadPolicyFromCompletedOrders } = await import("../src/policy/policy-lookup.js");
+  const { policyIdMatches } = await import("../src/policy/policy-id.js");
+  assert.equal(policyIdMatches("pol_3838ea774da", "pol_3838ea774dad"), true);
+  ok("policyIdMatches tolerates truncated policyId");
 }
 
 async function main(): Promise<void> {

@@ -130,11 +130,3 @@ export function attachPolicyJourneyGuide(
       : "Run payroll execution (step 3) once — executionGuide.payroll has the JSON.",
   };
 }
-
-/** Shared journey recipient shape for scripts and tests. */
-export type JourneyRecipient = {
-  subname: string;
-  address: `0x${string}`;
-  label: string;
-  bps: number;
-};

@@ -11,6 +11,7 @@ import {
   savePolicyToDatabase,
 } from "./database.js";
 import { loadPolicyFromCompletedOrders } from "./policy-lookup.js";
+import { policyIdMatches } from "./policy-id.js";
 import type { AgentClient } from "@croo-network/sdk";
 import type { StoredPolicy } from "./types.js";
 
@@ -118,15 +119,23 @@ export async function loadPolicyWithFallback(
 }
 
 export async function loadPolicy(policyId: string): Promise<StoredPolicy | null> {
-  const cached = memoryStore.get(policyId);
+  const target = policyId.trim().toLowerCase();
+
+  const cached = memoryStore.get(target);
   if (cached) {
     return cached;
   }
 
+  for (const [id, policy] of memoryStore) {
+    if (policyIdMatches(target, id)) {
+      return policy;
+    }
+  }
+
   if (isDatabaseEnabled() && isDatabaseReady()) {
-    const fromDb = await loadPolicyFromDatabase(policyId);
+    const fromDb = await loadPolicyFromDatabase(target);
     if (fromDb) {
-      memoryStore.set(policyId, fromDb);
+      memoryStore.set(fromDb.policyId, fromDb);
       return fromDb;
     }
   }

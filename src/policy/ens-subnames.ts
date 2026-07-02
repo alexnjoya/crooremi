@@ -200,10 +200,6 @@ export async function ensureSubname(
   return { ens, address, created: true, txHashes };
 }
 
-export function isSubnameProvisioningEnabled(): boolean {
-  return canProvisionEns();
-}
-
 export async function provisionPolicySubnames(
   recipients: RecipientWithSubname[],
   parentDomain: string,
@@ -252,25 +248,4 @@ export async function provisionPolicySubnames(
   }
 
   return { recipients: updated, ensSubnames, ensParentRegistration };
-}
-
-export async function checkParentName(parentDomain: string): Promise<{
-  parent: string;
-  resolves: boolean;
-  ownerHint: string;
-  registrationNote: string;
-}> {
-  assertBasenameParent(parentDomain);
-  const parent = normalize(parentDomain);
-  const existing = await forwardResolve(parent);
-  const registryOwner = await getBasenameRegistryOwner(parent);
-
-  return {
-    parent,
-    resolves: Boolean(existing),
-    ownerHint: existing ?? registryOwner ?? "not found",
-    registrationNote: existing || registryOwner
-      ? `Org ${parent} is registered on Base${existing ? "" : " (no forward addr yet)"}. User names: {label}.${parent}`
-      : `Register at https://www.base.org/names or set ENS_AUTO_REGISTER_PARENT=true (operator ETH on Base)`,
-  };
 }

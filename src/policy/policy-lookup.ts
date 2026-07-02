@@ -1,7 +1,6 @@
 import type { AgentClient } from "@croo-network/sdk";
+import { extractPolicyId, policyIdMatches } from "./policy-id.js";
 import type { CreatePolicyDelivery, StoredPolicy } from "./types.js";
-
-const POLICY_ID_RE = /pol_[a-f0-9]+/i;
 
 function deliveryBody(raw: {
   deliverableText?: string;
@@ -26,12 +25,11 @@ function parsePolicyIdFromDelivery(raw: unknown): string | null {
   try {
     const parsed = JSON.parse(raw) as { policyId?: string };
     const id = parsed.policyId?.trim();
-    if (id && /^pol_[a-f0-9]+$/i.test(id)) {
+    if (id && extractPolicyId(id)) {
       return id.toLowerCase();
     }
   } catch {
-    const match = raw.match(/pol_[a-f0-9]+/i);
-    return match?.[0]?.toLowerCase() ?? null;
+    return extractPolicyId(raw);
   }
   return null;
 }
@@ -45,7 +43,7 @@ function parseCreatePolicyDelivery(raw: unknown): CreatePolicyDelivery | null {
     const policyId = parsed.policyId?.trim().toLowerCase();
     if (
       policyId &&
-      POLICY_ID_RE.test(policyId) &&
+      extractPolicyId(policyId) &&
       parsed.policy?.recipients?.length
     ) {
       return { ...parsed, policyId };
@@ -81,9 +79,10 @@ export async function loadPolicyFromCompletedOrders(
     try {
       const delivery = await client.getDelivery(order.orderId);
       const parsed = parseCreatePolicyDelivery(deliveryBody(delivery));
-      if (parsed?.policyId === targetId) {
+      if (parsed && policyIdMatches(targetId, parsed.policyId)) {
         return {
           ...parsed,
+          policyId: parsed.policyId,
           createdAt: order.createdTime ?? new Date().toISOString(),
         };
       }

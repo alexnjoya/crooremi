@@ -5,6 +5,7 @@ import { buildExecuteBatchPlan, executeBatchSchema } from "./execute-batch.js";
 import { DEFAULT_GUIDE_TOTAL_USDC } from "./execution-guide.js";
 import { interpretExecutePayrollText } from "./llm.js";
 import { resolvePolicyIdFromRequester } from "./policy-lookup.js";
+import { extractPolicyId } from "./policy-id.js";
 import { loadLatestPolicy, type PolicyLoadContext } from "./store.js";
 import { parseAgentStoreExecuteRequirements } from "./store-requirements.js";
 import {
@@ -14,8 +15,6 @@ import {
   unwrapNaturalLanguage,
 } from "./requirements-utils.js";
 import type { ExecuteBatchInput, ExecuteBatchPlan } from "./types.js";
-
-const POLICY_ID_RE = /pol_[a-f0-9]+/i;
 
 export type ExecuteParseContext = {
   client?: AgentClient;
@@ -37,15 +36,7 @@ function policyLoadContext(ctx?: ExecuteParseContext): PolicyLoadContext | undef
 }
 
 function normalizePolicyId(value: string): string | null {
-  const trimmed = value.trim();
-  if (!POLICY_ID_RE.test(trimmed)) {
-    return null;
-  }
-  return trimmed.match(POLICY_ID_RE)![0]!.toLowerCase();
-}
-
-function extractPolicyIdFromText(text: string): string | null {
-  return text.match(POLICY_ID_RE)?.[0]?.toLowerCase() ?? null;
+  return extractPolicyId(value);
 }
 
 function extractTotalUsdcFromText(text: string): string | null {
@@ -67,7 +58,7 @@ function extractTotalUsdcFromText(text: string): string | null {
 }
 
 function extractExecuteInput(text: string): ExecuteBatchInput | null {
-  const policyId = extractPolicyIdFromText(text);
+  const policyId = extractPolicyId(text);
   if (!policyId) {
     return null;
   }
@@ -139,7 +130,7 @@ async function buildFromLlmDraft(
   const draft = await interpretExecutePayrollText(text);
   let policyId = normalizePolicyId(draft.policyId);
   if (!policyId) {
-    policyId = extractPolicyIdFromText(fallbackSource);
+    policyId = extractPolicyId(fallbackSource);
   }
 
   const input = await finalizeExecuteInput(

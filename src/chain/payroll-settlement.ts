@@ -70,30 +70,3 @@ export async function executePayrollSettlement(
     settlement: disbursement.settlement,
   };
 }
-
-/** @deprecated Use executePayrollSettlement — kept for tests importing buildPayrollDelivery */
-export function buildPayrollDelivery(
-  order: Order,
-  plan: ExecuteBatchPlan,
-  deliverTxHash?: string,
-): ExecutePaymentDelivery {
-  assertPayrollFundTransfer(order, plan);
-
-  const fundTxHash = order.payTxHash!.trim();
-  const capDeliverTxHash = deliverTxHash?.trim() || order.deliverTxHash?.trim();
-
-  return {
-    policyId: plan.policyId,
-    totalUsdc: plan.totalUsdc,
-    fundTxHash,
-    deliverTxHash: capDeliverTxHash,
-    txHashes: [fundTxHash, ...(capDeliverTxHash ? [capDeliverTxHash] : [])],
-    recipients: plan.legs.map((leg) => ({
-      label: leg.recipient.label,
-      address: leg.recipient.address,
-      amount: leg.recipient.amount,
-    })),
-    baseExplorer: baseExplorerTx(capDeliverTxHash ?? fundTxHash),
-    settlement: "croo_payroll",
-  };
-}

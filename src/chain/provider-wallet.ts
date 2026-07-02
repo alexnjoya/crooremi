@@ -56,8 +56,3 @@ export async function getProviderFundAddress(
       "Fund-transfer accept needs an address; disbursement requires router or payout key.",
   );
 }
-
-/** @deprecated Use getProviderFundAddress */
-export async function getProviderAaWalletAddress(client: AgentClient): Promise<`0x${string}`> {
-  return getProviderFundAddress(client);
-}

@@ -65,16 +65,28 @@ export async function loadPolicyFromDatabase(
     return null;
   }
 
-  const result = await pool.query<{ payload: StoredPolicy }>(
-    `SELECT payload FROM remifi_policies WHERE policy_id = $1`,
-    [policyId],
-  );
+  const target = policyId.trim().toLowerCase();
 
-  if (result.rowCount === 0) {
-    return null;
+  const exact = await pool.query<{ payload: StoredPolicy }>(
+    `SELECT payload FROM remifi_policies WHERE policy_id = $1`,
+    [target],
+  );
+  if (exact.rowCount && exact.rowCount > 0) {
+    return exact.rows[0]!.payload;
   }
 
-  return result.rows[0]!.payload;
+  const prefix = await pool.query<{ payload: StoredPolicy }>(
+    `SELECT payload FROM remifi_policies
+     WHERE policy_id = $1 OR policy_id LIKE $1 || '%'
+     ORDER BY length(policy_id) ASC
+     LIMIT 2`,
+    [target],
+  );
+  if (prefix.rowCount === 1) {
+    return prefix.rows[0]!.payload;
+  }
+
+  return null;
 }
 
 export async function loadLatestPolicyFromDatabase(): Promise<StoredPolicy | null> {
