@@ -3,7 +3,7 @@
 ## Checklist
 
 - [ ] Agent registered at [agent.croo.network](https://agent.croo.network)
-- [ ] Profile description (≤500 chars) — see [setup.md](../setup.md)
+- [ ] Profile description (≤500 chars) — see listing copy below
 - [ ] Tags: DeFi & Trading, Automation & Workflow, Development & Code
 - [ ] Service 1: **ENS Payout Identity** — `0.20` USDC, Schema deliverable
 - [ ] Service 2: **USDC Split Policy** — `0.50` USDC, Schema deliverable
@@ -32,7 +32,7 @@ Remifi is a composable payout layer for AI agents and DAOs on Base. Hire three s
 | USDC Split Policy | 0.50 USDC | Define a reusable USDC split with recipients and basis points. |
 | USDC Split Execution | 1.00 USDC + principal | Execute the split on Base and return transaction hashes. |
 
-Full wizard values, Try this JSON, and env setup: [setup.md](../setup.md).
+Full wizard values and env setup: [CAP_INTEGRATION.md](./CAP_INTEGRATION.md).
 
 ## Screenshots
 

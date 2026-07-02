@@ -6,7 +6,6 @@ import { fileURLToPath } from "node:url";
 import {
   isDatabaseEnabled,
   isDatabaseReady,
-  loadLatestPolicyFromDatabase,
   loadPolicyFromDatabase,
   savePolicyToDatabase,
 } from "./database.js";
@@ -17,7 +16,6 @@ import type { StoredPolicy } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-/** Hot cache for the current process. */
 const memoryStore = new Map<string, StoredPolicy>();
 
 let policyDir: string | undefined;
@@ -157,29 +155,10 @@ export async function loadPolicy(policyId: string): Promise<StoredPolicy | null>
       memoryStore.set(policyId, parsed);
       return parsed;
     } catch {
-      // try next location
     }
   }
 
   return null;
-}
-
-export async function loadLatestPolicy(): Promise<StoredPolicy | null> {
-  if (isDatabaseEnabled() && isDatabaseReady()) {
-    const fromDb = await loadLatestPolicyFromDatabase();
-    if (fromDb) {
-      memoryStore.set(fromDb.policyId, fromDb);
-      return fromDb;
-    }
-  }
-
-  let latest: StoredPolicy | null = null;
-  for (const policy of memoryStore.values()) {
-    if (!latest || policy.createdAt > latest.createdAt) {
-      latest = policy;
-    }
-  }
-  return latest;
 }
 
 export function toStoredPolicy(

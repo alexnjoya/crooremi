@@ -22,7 +22,16 @@ const envSchema = z.object({
   CROO_SERVICE_ID_RESOLVE_ENS: z.string().optional(),
   CROO_SERVICE_ID_INSTANT_USDC_PAY: z.string().optional(),
   CROO_REQUESTER_SDK_KEY: z.string().optional(),
-  CROO_TARGET_SERVICE_ID: z.string().optional(),
+  CROO_AGENT_ID: z
+    .string()
+    .uuid()
+    .optional()
+    .transform((value) => (value && value.trim() !== "" ? value.trim() : undefined)),
+  REMIFI_AGENT_STORE_URL: z
+    .string()
+    .url()
+    .optional()
+    .transform((value) => (value && value.trim() !== "" ? value.trim() : undefined)),
   BASE_RPC_URL: z.string().url().default("https://mainnet.base.org"),
   ETH_RPC_URL: z.string().url().default("https://ethereum.publicnode.com"),
   BASE_CHAIN_ID: z.coerce.number().default(8453),
@@ -129,3 +138,13 @@ export const baseExplorerTx = (txHash: string) =>
   env.BASE_CHAIN_ID === 8453
     ? `https://basescan.org/tx/${txHash}`
     : `https://sepolia.basescan.org/tx/${txHash}`;
+
+export function getAgentStoreUrl(): string {
+  if (env.REMIFI_AGENT_STORE_URL) {
+    return env.REMIFI_AGENT_STORE_URL;
+  }
+  if (env.CROO_AGENT_ID) {
+    return `https://agent.croo.network/agents/${env.CROO_AGENT_ID}`;
+  }
+  return "https://agent.croo.network";
+}

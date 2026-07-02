@@ -80,6 +80,7 @@ data/
 
 # Demo / local-only
 *.local.md
+docs/ORDERS.json
 
 # Local planning docs (private — not for public repo)
 devplan.md

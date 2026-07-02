@@ -6,11 +6,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Hackathon](https://img.shields.io/badge/CROO-Agent%20Hackathon-000)](https://dorahacks.io/hackathon/croo-hackathon/detail)
 
-In DeFi, paying a team means calculate shares, send a transfer, send another, track tx hashes, repeat — step after step. What if your agent just did all of it? **One hire. Every recipient paid. Proof on Base.**
+In DeFi, paying a team means calculate shares, send a transfer, send another, track tx hashes, repeat  step after step. What if your agent just did all of it? **One hire. Every recipient paid. Proof on Base.**
 
-Right now, every agent that splits USDC either builds its own payout logic or waits for a human to run payroll. That falls apart the moment agents need to pay each other — at machine speed, hundreds of times a day. Manual splits don't scale to an agent economy.
+Right now, every agent that splits USDC either builds its own payout logic or waits for a human to run payroll. That falls apart the moment agents need to pay each other  at machine speed, hundreds of times a day. Manual splits don't scale to an agent economy.
 
-**Meet Remifi** — a hireable payout agent on Base, live on the [CROO Agent Store](https://agent.croo.network/agents/fd57334e-5e6f-4b76-9d5f-da0202f23a10). Describe who gets what in plain English or JSON — by wallet or `*.base.eth` name (`blockdevrel.base.eth`, `treasury.acme.base.eth`). Remifi registers payment names, stores the split policy, and executes — **one CAP hire pays every recipient**. Real USDC. Real tx hashes. No custom splitter to build.
+**Meet Remifi** — a hireable payout agent on Base, live on the [CROO Agent Store](https://agent.croo.network/agents/fd57334e-5e6f-4b76-9d5f-da0202f23a10). Describe who gets what in plain English or JSON — by wallet or `*.base.eth` name (`blockdevrel.base.eth`, `treasury.acme.base.eth`). Remifi registers payment names, stores the split policy, and executes **one CAP hire pays every recipient**. Real USDC. Real tx hashes. No custom splitter to build.
 
 > *Split payroll 60% to `blockdevrel.base.eth`, 40% to `treasury.acme.base.eth`. I describe it once. Remifi creates the policy. One execution hire later, everyone has USDC. I never wrote a transfer script. I never sent five separate transactions. Done.*
 
@@ -160,6 +160,8 @@ Event types handled: `NegotiationCreated`, `OrderPaid`, `OrderCompleted` (`Event
 
 Full service schemas, payload examples, and the **negotiate → accept → pay → deliver → get** flow are documented in [docs/CAP_INTEGRATION.md](docs/CAP_INTEGRATION.md).
 
+**Hire Remifi from your agent:** [docs/REQUESTER.md](docs/REQUESTER.md) · [A2A composability](docs/A2A_COMPOSABILITY.md) · Export proof: `npm run export:orders`
+
 ### Integration notes
 
 - **Services**: five CAP services are exposed — `createEnsName`, `createPolicy`, `resolveEnsName`, `executePaymentJob`, and `instantUsdcPay`.
@@ -174,15 +176,37 @@ Full service schemas, payload examples, and the **negotiate → accept → pay �
 
 ---
 
+## A2A composability
+
+Remifi is a **hireable payout primitive** — orchestrators, treasury bots, and other CAP agents add it as a split leg instead of building payroll infrastructure.
+
+| Pattern | What it proves |
+|---------|----------------|
+| `createPolicy` → `executePaymentJob` | Multi-hire payroll chain per agent |
+| Agent A creates policy · Agent B executes | Cross-agent composability via portable `policyId` |
+| All 5 services hired | Breadth — ENS, policy, execute, resolve, instant pay |
+
+```bash
+npm run export:orders      # A2A scorecard + docs/ORDERS.json for judges
+npm run a2a:cross-agent    # two agents, one policy, one execution
+npm run a2a:hire           # third hiring agent (set CROO_THIRD_AGENT_SDK_KEY)
+```
+
+Full guide: [docs/A2A_COMPOSABILITY.md](docs/A2A_COMPOSABILITY.md)
+
+**Disclosed test agents:** Remifi team uses registered CROO test requester agents for integration proof. State this plainly in your demo if judges ask — not implied external partnerships unless real.
+
+---
+
 ## Demo (≤5 min)
 
 1. **Hook** — *"Every agent builds its own splitter. We don't."*
 2. **Policy** — Type a split in plain English → get `policyId`.
 3. **Execute** — One hire. USDC lands in every wallet.
 4. **Proof** — BaseScan + CAP delivery JSON (`fundTxHash`, per-recipient `txHash`).
-5. **A2A** — A second agent hires Remifi from the Store as its payout leg.
+5. **A2A** — Cross-agent hire: one agent creates policy, another executes (`npm run a2a:cross-agent`) or a third agent hires from Store.
 
-Script: [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md)
+Script: [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) · A2A proof: [docs/A2A_COMPOSABILITY.md](docs/A2A_COMPOSABILITY.md)
 
 ---
 
@@ -194,7 +218,7 @@ Script: [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md)
 │   └── policy/        # ENS, policy interpreter, payroll settlement
 ├── web/               # TanStack Start demo UI
 ├── contracts/         # Router Solidity (optional on-chain path)
-├── scripts/           # verify:flow, verify:llm, journey
+├── scripts/           # verify:flow, journey, a2a, export:orders
 └── docs/              # CAP, Agent Store, demo script
 ```
 

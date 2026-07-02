@@ -15,8 +15,7 @@ import {
 import { LogoMark } from "@/components/Logo";
 
 const CROO_STORE_URL =
-  import.meta.env.VITE_AGENT_STORE_URL ??
-  "https://agent.croo.network/agents/fd57334e-5e6f-4b76-9d5f-da0202f23a10";
+  import.meta.env.VITE_AGENT_STORE_URL ?? "https://agent.croo.network";
 const CONTAINER = "mx-auto w-full max-w-6xl px-6 lg:px-8";
 
 export const Route = createFileRoute("/")({

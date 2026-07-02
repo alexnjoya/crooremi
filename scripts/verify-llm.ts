@@ -1,17 +1,15 @@
-/**
- * Verifies LangChain structured parsing for all four CAP services.
- * Requires ANTHROPIC_API_KEY or OPENAI_API_KEY in .env
- * Run: npm run verify:llm
- */
 import { resolve } from "node:path";
 import assert from "node:assert/strict";
 import { config as loadEnv } from "dotenv";
 
 loadEnv({ path: resolve(process.cwd(), ".env"), override: false });
 process.env.CROO_SDK_KEY ??= "croo_sk_verify_llm_test_key_placeholder_00";
+process.env.TEST_RECIPIENT_A ??= "0x0000000000000000000000000000000000000001";
+process.env.TEST_RECIPIENT_B ??= "0x0000000000000000000000000000000000000002";
 process.env.DEV_MOCK_ENS_SUBNAMES = "true";
 
 const { initPolicyDatabase } = await import("../src/policy/database.js");
+const { testRecipientA, testRecipientB } = await import("./lib/fixtures.js");
 const { interpretPolicyFromRequirements } = await import("../src/policy/interpreter.js");
 const { parseExecutePayrollPlan } = await import("../src/policy/execute-resolver.js");
 const { createEnsFromRequirements } = await import("../src/policy/ens-service.js");
@@ -20,8 +18,8 @@ const { interpretEnsResolveText } = await import("../src/policy/llm.js");
 const { savePolicy, toStoredPolicy } = await import("../src/policy/store.js");
 const { hasLlmKeys } = await import("../src/policy/requirements-utils.js");
 
-const WALLET_A = "0xB98cFAC37b8bD7f549789718aC17F8aEE7cE0c37";
-const WALLET_B = "0x173dbd987ea65f8dfd2d15ea2780acb615bdd8d9";
+const WALLET_A = testRecipientA();
+const WALLET_B = testRecipientB();
 
 let passed = 0;
 

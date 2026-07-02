@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import pg from "pg";
 import { env } from "../config.js";
 import type { StoredPolicy } from "./types.js";
@@ -6,6 +7,14 @@ const { Pool } = pg;
 
 let pool: pg.Pool | undefined;
 let ready = false;
+
+export function getOrderLedgerPool(): pg.Pool | undefined {
+  return pool;
+}
+
+export function isOrderLedgerReady(): boolean {
+  return ready;
+}
 
 export function isDatabaseEnabled(): boolean {
   return Boolean(env.DATABASE_URL?.trim());
@@ -38,6 +47,14 @@ export async function initPolicyDatabase(): Promise<void> {
   await pool.query(`
     CREATE INDEX IF NOT EXISTS remifi_policies_created_at_idx
     ON remifi_policies (created_at DESC)
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS remifi_order_fulfillments (
+      order_id TEXT PRIMARY KEY,
+      service_id TEXT NOT NULL,
+      delivery_payload JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
   `);
 
   ready = true;
@@ -89,24 +106,33 @@ export async function loadPolicyFromDatabase(
   return null;
 }
 
-export async function loadLatestPolicyFromDatabase(): Promise<StoredPolicy | null> {
-  if (!ready || !pool) {
-    return null;
-  }
-
-  const result = await pool.query<{ payload: StoredPolicy }>(
-    `SELECT payload FROM remifi_policies ORDER BY created_at DESC LIMIT 1`,
-  );
-
-  if (result.rowCount === 0) {
-    return null;
-  }
-
-  return result.rows[0]!.payload;
-}
-
 export async function closePolicyDatabase(): Promise<void> {
   await pool?.end();
   pool = undefined;
   ready = false;
+}
+
+function advisoryLockKey(orderId: string): bigint {
+  const digest = createHash("sha256").update(orderId).digest();
+  return digest.readBigInt64BE(0);
+}
+
+export async function tryAcquireOrderAdvisoryLock(orderId: string): Promise<boolean> {
+  if (!ready || !pool) {
+    return true;
+  }
+  const result = await pool.query<{ locked: boolean }>(
+    "SELECT pg_try_advisory_lock($1::bigint) AS locked",
+    [advisoryLockKey(orderId).toString()],
+  );
+  return Boolean(result.rows[0]?.locked);
+}
+
+export async function releaseOrderAdvisoryLock(orderId: string): Promise<void> {
+  if (!ready || !pool) {
+    return;
+  }
+  await pool.query("SELECT pg_advisory_unlock($1::bigint)", [
+    advisoryLockKey(orderId).toString(),
+  ]);
 }

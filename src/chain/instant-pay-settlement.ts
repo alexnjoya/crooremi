@@ -97,11 +97,6 @@ function mockInstantPayDelivery(
   };
 }
 
-/**
- * Instant USDC Pay — CROO CAP only.
- * Buyer fund transfer goes directly to the recipient (providerFundAddress = recipient).
- * No Router contract and no provider payout wallet — unlike USDC Split Execution.
- */
 export async function settleInstantUsdcPay(
   order: Order,
   resolved: InstantUsdcPayResolved,

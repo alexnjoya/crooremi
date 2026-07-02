@@ -1,15 +1,16 @@
-/**
- * Verifies Remifi flow locally (no CAP network).
- * Run: npm run verify:flow
- */
 import { resolve } from "node:path";
 import assert from "node:assert/strict";
 import { config as loadEnv } from "dotenv";
 
 loadEnv({ path: resolve(process.cwd(), ".env"), override: false });
 process.env.CROO_SDK_KEY ??= "croo_sk_verify_flow_test_key_placeholder_00";
+process.env.TEST_RECIPIENT_A ??= "0x0000000000000000000000000000000000000001";
+process.env.TEST_RECIPIENT_B ??= "0x0000000000000000000000000000000000000002";
+process.env.TEST_ENS_NAME ??= "example.base.eth";
 process.env.DEV_MOCK_ENS_SUBNAMES = "true";
 process.env.DEV_MOCK_PAYROLL_SETTLEMENT = "true";
+
+const { testRecipientA, testRecipientB, testEnsName } = await import("./lib/fixtures.js");
 
 const { initPolicyDatabase } = await import("../src/policy/database.js");
 
@@ -26,15 +27,19 @@ const {
   buildPolicyRequirementsFromEns,
 } = await import("../src/policy/journey-guide.js");
 
+const ADDR_A = testRecipientA();
+const ADDR_B = testRecipientB();
+const ENS_NAME = testEnsName();
+
 const RECIPIENTS = [
   {
-    address: "0xB98cFAC37b8bD7f549789718aC17F8aEE7cE0c37",
+    address: testRecipientA(),
     label: "wallet-a",
     bps: 3000,
     subname: "wallet-a",
   },
   {
-    address: "0x173dbd987ea65f8dfd2d15ea2780acb615bdd8d9",
+    address: testRecipientB(),
     label: "wallet-b",
     bps: 6000,
     subname: "wallet-b",
@@ -144,7 +149,7 @@ function testEnsJourneyGuide(): void {
         orgLabel: "verifytest",
         subname: "wallet-a",
         ens: "wallet-a.verifytest.base.eth",
-        address: "0xB98cFAC37b8bD7f549789718aC17F8aEE7cE0c37" as const,
+        address: ADDR_A,
         created: true,
         txHashes: ["0xabc"],
       },
@@ -153,7 +158,7 @@ function testEnsJourneyGuide(): void {
         orgLabel: "verifytest",
         subname: "wallet-b",
         ens: "wallet-b.verifytest.base.eth",
-        address: "0x173dbd987ea65f8dfd2d15ea2780acb615bdd8d9" as const,
+        address: ADDR_B,
         created: true,
         txHashes: ["0xdef"],
       },
@@ -185,7 +190,7 @@ async function testNlJsonUnwrap(): Promise<void> {
 
   const delivery = await interpretPolicyFromRequirements(
     JSON.stringify({
-      text: "split 30% to 0xB98cFAC37b8bD7f549789718aC17F8aEE7cE0c37 and 60% to 0x173dbd987ea65f8dfd2d15ea2780acb615bdd8d9",
+      text: `split 30% to ${ADDR_A} and 60% to ${ADDR_B}`,
       totalUsdc: "500000",
     }),
   );
@@ -212,11 +217,11 @@ async function testEnsResolveParsing(): Promise<void> {
   ok("ENS resolver parses queries array from requirements");
 
   const fromText = await parseEnsResolveQueries(
-    JSON.stringify({ text: "blockdevrel.base.eth" }),
+    JSON.stringify({ text: ENS_NAME }),
   );
   assert.equal(fromText.length, 1);
   assert.equal(fromText[0]?.direction, "forward");
-  assert.equal(fromText[0]?.value, "blockdevrel.base.eth");
+  assert.equal(fromText[0]?.value, ENS_NAME);
   ok("ENS resolver accepts { text: \"name.base.eth\" }");
 
   const fromAddress = await parseEnsResolveQueries(
@@ -237,46 +242,46 @@ async function testInstantUsdcPayParsing(): Promise<void> {
 
   const fromJson = await parseInstantUsdcPayRequirements(
     JSON.stringify({
-      to: "0xB98cFAC37b8bD7f549789718aC17F8aEE7cE0c37",
+      to: ADDR_A,
       amount: "50000",
     }),
   );
-  assert.equal(fromJson.to, "0xB98cFAC37b8bD7f549789718aC17F8aEE7cE0c37");
+  assert.equal(fromJson.to, ADDR_A);
   assert.equal(fromJson.amount, "50000");
   ok("instant USDC pay parses JSON to + amount");
 
   const fromNl = await parseInstantUsdcPayRequirements(
-    "Send 0.05 USDC to 0xB98cFAC37b8bD7f549789718aC17F8aEE7cE0c37",
+    `Send 0.05 USDC to ${ADDR_A}`,
   );
   assert.equal(fromNl.amount, "50000");
   ok("instant USDC pay parses natural language send X USDC to Y");
 
   const fundFallback = await parseInstantUsdcPayRequirements(
-    JSON.stringify({ to: "0xB98cFAC37b8bD7f549789718aC17F8aEE7cE0c37" }),
+    JSON.stringify({ to: ADDR_A }),
     { fundAmount: "75000" },
   );
   assert.equal(fundFallback.amount, "75000");
   ok("instant USDC pay uses fundAmount when amount omitted");
 
-  const storeUi = await parseInstantUsdcPayRequirements("blockdevrel.base.eth", {
+  const storeUi = await parseInstantUsdcPayRequirements(ENS_NAME, {
     fundAmount: "10000",
   });
-  assert.equal(storeUi.to, "blockdevrel.base.eth");
+  assert.equal(storeUi.to, ENS_NAME);
   assert.equal(storeUi.amount, "10000");
   ok("instant USDC pay accepts recipient-only text when Store UI sets principal");
 
   const storeAddress = await parseInstantUsdcPayRequirements(
-    JSON.stringify({ address: "0xB98cFAC37b8bD7f549789718aC17F8aEE7cE0c37" }),
+    JSON.stringify({ address: ADDR_A }),
     { fundAmount: "100000" },
   );
-  assert.equal(storeAddress.to, "0xB98cFAC37b8bD7f549789718aC17F8aEE7cE0c37");
+  assert.equal(storeAddress.to, ADDR_A);
   assert.equal(storeAddress.amount, "100000");
   ok("instant USDC pay parses Agent Store { address } + checkout principal");
 
   const storeSend = await parseInstantUsdcPayRequirements(
-    JSON.stringify({ send: "blockdevrel.base.eth", principal_amount: 0.01 }),
+    JSON.stringify({ send: ENS_NAME, principal_amount: 0.01 }),
   );
-  assert.equal(storeSend.to, "blockdevrel.base.eth");
+  assert.equal(storeSend.to, ENS_NAME);
   assert.equal(storeSend.amount, "10000");
   ok("instant USDC pay parses Agent Store { send, principal_amount }");
 
@@ -284,11 +289,11 @@ async function testInstantUsdcPayParsing(): Promise<void> {
     "../src/policy/instant-usdc-pay.js"
   );
   const fundAddr = await resolveInstantPayFundAddress(
-    JSON.stringify({ address: "0xB98cFAC37b8bD7f549789718aC17F8aEE7cE0c37" }),
+    JSON.stringify({ address: ADDR_A }),
   );
   assert.equal(
     fundAddr.toLowerCase(),
-    "0xb98cfac37b8bd7f549789718ac17f8aee7ce0c37",
+    ADDR_A.toLowerCase(),
   );
   ok("instant USDC pay accept resolves fund address from address-only schema");
 }
@@ -298,7 +303,7 @@ async function testInstantUsdcPayCapSettlement(): Promise<void> {
     "../src/chain/instant-pay-settlement.js"
   );
 
-  const recipient = "0xB98cFAC37b8bD7f549789718aC17F8aEE7cE0c37" as const;
+  const recipient = ADDR_A;
   const resolved = {
     to: recipient,
     amount: "100000",
@@ -339,6 +344,84 @@ async function testInstantUsdcPayCapSettlement(): Promise<void> {
   ok("policyIdMatches tolerates truncated policyId");
 }
 
+async function testOrderStateGuards(): Promise<void> {
+  const { OrderStatus } = await import("@croo-network/sdk");
+  const { shouldProcessOrderPaid } = await import("../src/cap/order-state.js");
+
+  assert.equal(shouldProcessOrderPaid(OrderStatus.Paid).proceed, true);
+  assert.equal(shouldProcessOrderPaid(OrderStatus.DeliverFailed).proceed, true);
+  assert.equal(shouldProcessOrderPaid(OrderStatus.Completed).proceed, false);
+  assert.equal(shouldProcessOrderPaid(OrderStatus.Delivering).proceed, false);
+  assert.equal(shouldProcessOrderPaid(OrderStatus.Created).proceed, false);
+  ok("shouldProcessOrderPaid matches CROO OrderStatus");
+}
+
+async function testOrderLedger(): Promise<void> {
+  const {
+    claimOrderProcessing,
+    clearMemoryLedgerForTests,
+    getStagedDelivery,
+    isFulfillmentReadyForDelivery,
+    saveOrderFulfillment,
+    loadOrderFulfillment,
+    stageOrderDelivery,
+    LEDGER_PHASE_FULFILLED,
+  } = await import("../src/cap/order-ledger.js");
+
+  clearMemoryLedgerForTests();
+
+  const orderId = `test-order-${Date.now()}`;
+  const claimed = await claimOrderProcessing(orderId, "svc-test", { policyId: "pol_test" });
+  assert.equal(claimed, true);
+
+  const processing = await loadOrderFulfillment(orderId);
+  assert.ok(processing);
+  assert.equal(isFulfillmentReadyForDelivery(processing!.deliveryPayload), false);
+
+  const claimedAgain = await claimOrderProcessing(orderId, "svc-test");
+  assert.equal(claimedAgain, false);
+
+  await stageOrderDelivery(orderId, "svc-test", {
+    policyId: "pol_test",
+    policy: { recipients: [{ address: "0x0", label: "a", bps: 10000 }] },
+  });
+  const stagedRow = await loadOrderFulfillment(orderId);
+  assert.ok(getStagedDelivery(stagedRow!.deliveryPayload));
+  assert.equal(isFulfillmentReadyForDelivery(stagedRow!.deliveryPayload), true);
+
+  await saveOrderFulfillment(orderId, "svc-test", {
+    policyId: "pol_test",
+    recipients: [{ label: "a", address: "0x0", amount: "1", txHash: "0x1" }],
+  });
+
+  const fulfilled = await loadOrderFulfillment(orderId);
+  assert.ok(fulfilled);
+  assert.equal(fulfilled!.deliveryPayload._ledgerPhase, LEDGER_PHASE_FULFILLED);
+  assert.equal(isFulfillmentReadyForDelivery(fulfilled!.deliveryPayload), true);
+  ok("order ledger claim + stage + fulfilled delivery detection");
+
+  clearMemoryLedgerForTests();
+}
+
+async function testAssertLedgerReadyForFundOrders(): Promise<void> {
+  const {
+    assertLedgerReadyForFundOrders,
+    isDatabaseReadyForLedger,
+  } = await import("../src/cap/order-ledger.js");
+
+  if (isDatabaseReadyForLedger()) {
+    assertLedgerReadyForFundOrders();
+    ok("assertLedgerReadyForFundOrders passes when Postgres ledger ready");
+    return;
+  }
+
+  assert.throws(
+    () => assertLedgerReadyForFundOrders(),
+    /DATABASE_URL is required/,
+  );
+  ok("assertLedgerReadyForFundOrders rejects without Postgres");
+}
+
 async function main(): Promise<void> {
   console.log("\nRemifi flow verification\n");
 
@@ -352,6 +435,9 @@ async function main(): Promise<void> {
   await testInstantUsdcPayParsing();
   await testInstantUsdcPayCapSettlement();
   await testNlJsonUnwrap();
+  await testOrderStateGuards();
+  await testOrderLedger();
+  await testAssertLedgerReadyForFundOrders();
 
   console.log(`\n${passed} checks passed.\n`);
 }

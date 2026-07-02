@@ -3,8 +3,7 @@ import { Separator } from "@/components/ui/separator";
 import { LogoMark } from "@/components/Logo";
 
 const AGENT_STORE_URL =
-  import.meta.env.VITE_AGENT_STORE_URL ??
-  "https://agent.croo.network/agents/fd57334e-5e6f-4b76-9d5f-da0202f23a10";
+  import.meta.env.VITE_AGENT_STORE_URL ?? "https://agent.croo.network";
 const BASESCAN_URL =
   import.meta.env.VITE_BASESCAN_URL ?? "https://sepolia.basescan.org";
 const CROO_DOCS_URL = "https://docs.croo.network";

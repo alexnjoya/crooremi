@@ -1,64 +1,151 @@
 # CAP Integration
 
-Remifi is a **CAP provider** using [@croo-network/sdk](https://docs.croo.network).
+Remifi is a **CAP provider** using [@croo-network/sdk](https://docs.croo.network) v0.2.1.
 
-## Registration
+Official SDK reference: `node_modules/@croo-network/sdk/README.md` and [CROO docs](https://docs.croo.network).
 
-1. [agent.croo.network](https://agent.croo.network) → Register Agent → copy `CROO_SDK_KEY`
-2. Configure four services (see [setup.md](../setup.md))
-3. Copy **AA Wallet Address** from dashboard → `PROVIDER_AA_WALLET_ADDRESS`
+---
 
-No provider private key is required for payroll — CROO SDK signs `payOrder` and `deliverOrder`.
+## Setup
 
-## Environment
+### 1. Register agent
+
+1. Go to [agent.croo.network](https://agent.croo.network) → **Register Agent**
+2. Copy `CROO_SDK_KEY` (shown once)
+3. Create **five services** (see table below) and copy each service ID into `.env`
+4. Deposit USDC to the **requester AA wallet** before hiring (SDK checks balance on `payOrder`)
+
+### 2. Environment
 
 ```bash
-CROO_API_URL=https://api.croo.network
-CROO_WS_URL=wss://api.croo.network/ws
-CROO_SDK_KEY=croo_sk_...
-CROO_SERVICE_ID_CREATE_ENS=...
-CROO_SERVICE_ID_CREATE_POLICY=...
-CROO_SERVICE_ID_EXECUTE_PAYMENT=...
-CROO_SERVICE_ID_RESOLVE_ENS=...
-CROO_SERVICE_ID_INSTANT_USDC_PAY=...
-PROVIDER_AA_WALLET_ADDRESS=0x...   # Dashboard → Configure → AA Wallet
+cp .env.example .env
 ```
 
-## Services
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `CROO_API_URL` | yes | `https://api.croo.network` |
+| `CROO_WS_URL` | yes | `wss://api.croo.network/ws` — provider must stay connected for **Online** |
+| `CROO_SDK_KEY` | yes | Provider SDK key (`croo_sk_...`) |
+| `CROO_SERVICE_ID_CREATE_ENS` | yes | ENS Payout Identity |
+| `CROO_SERVICE_ID_CREATE_POLICY` | yes | USDC Split Policy |
+| `CROO_SERVICE_ID_EXECUTE_PAYMENT` | yes | USDC Split Execution |
+| `CROO_SERVICE_ID_RESOLVE_ENS` | yes | ENS Lookup |
+| `CROO_SERVICE_ID_INSTANT_USDC_PAY` | yes | Instant USDC Pay |
+| `DATABASE_URL` | prod (fund) | **Required** for `executePaymentJob` and `instantUsdcPay` — order fulfillment ledger |
+| `BASE_RPC_URL` | yes | Base mainnet RPC |
+| `USDC_ADDRESS` | yes | Base USDC (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`) |
+| `ROUTER_ADDRESS` | recommended | Fund-transfer accept address for payroll |
+| `ROUTER_EXECUTOR_ADDRESS` | with router | Must match on-chain router executor |
+| `PROVIDER_PAYOUT_PRIVATE_KEY` | recommended | Signs `router.executeSplit` or EOA transfers |
+| `ENS_REGISTRAR_PRIVATE_KEY` | yes (ENS) | Operator wallet for Base Names gas |
+| `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` | prod | LangChain parsing |
 
-### createEnsName (ENS Payout Identity)
+### 3. Run provider
 
-| Field | Value |
-|-------|-------|
-| Requirements | Schema |
-| Deliverable | Schema |
-| Fund transfer | OFF |
+```bash
+npm install
+npm run dev
+```
 
-### createPolicy (USDC Split Policy)
+Health: `GET http://localhost:3001/health` — returns CAP, DB, router, and payout wallet checks.
 
-| Field | Value |
-|-------|-------|
-| Requirements | Text or Schema |
-| Deliverable | Schema |
-| Fund transfer | OFF |
+---
 
-### resolveEnsName (ENS Forward & Reverse Resolver)
+## CROO order lifecycle (official)
 
-| Field | Value |
-|-------|-------|
-| Requirements | Text or Schema |
-| Deliverable | Schema |
-| Fund transfer | OFF |
+Per `@croo-network/sdk` `OrderStatus`:
 
-### executePaymentJob (USDC Split Execution — payroll)
+```
+creating → created → paying → paid → delivering → completed
+                              ↘ pay_failed
+                    ↘ deliver_failed (retry delivery)
+         ↘ rejected / expired
+```
 
-| Field | Value |
-|-------|-------|
-| Requirements | Schema |
-| Deliverable | Schema |
-| Fund transfer | **ON** |
+**Provider responsibilities:**
 
-**One hire pays every recipient** from a stored policy:
+| Event | Action |
+|-------|--------|
+| `NegotiationCreated` | `getNegotiation` → `acceptNegotiation` or `acceptNegotiationWithFundAddress` |
+| `OrderPaid` | Execute work → `deliverOrder` (Schema JSON) |
+| `OrderCompleted` | Log / done |
+
+**Requester responsibilities:**
+
+| Event | Action |
+|-------|--------|
+| `OrderCreated` | `payOrder` (USDC from AA wallet) |
+| `OrderCompleted` | `getDelivery` |
+
+Remifi implements idempotent `OrderPaid` handling in `src/cap/order-state.ts`, `src/cap/order-ledger.ts`, and `src/cap/handlers.ts`:
+
+| Layer | Mechanism |
+|-------|-----------|
+| CROO status | Skips terminal statuses; retries `paid` and `deliver_failed` |
+| In-process lock | `withOrderLock` / `withNegotiationLock` — WS redelivery on one worker |
+| Postgres advisory lock | `pg_try_advisory_lock` per `orderId` — cross-replica mutex on Railway |
+| Order ledger | `claimOrderProcessing` — atomic INSERT … ON CONFLICT DO NOTHING |
+| Staged delivery | `stageOrderDelivery` before `deliverOrder` — schema services never re-run ENS/policy on retry |
+| Fund services | `assertLedgerReadyForFundOrders` — refuses execute/instant pay without `DATABASE_URL` |
+| Router recovery | `saveRouterSplitResult` + `recoverRouterSplitFromChain` — split succeeded on-chain but ledger crashed |
+| Wallet payroll | `appendWalletDisbursementLeg` — resume mid-disburse without double-pay |
+
+---
+
+## SDK methods used
+
+### Provider (`src/cap/`)
+
+| Method | When |
+|--------|------|
+| `connectWebSocket()` | Stay Online; receive events |
+| `getNegotiation()` | Read requirements |
+| `acceptNegotiation()` | Non-fund services (ENS, policy, resolve) |
+| `acceptNegotiationWithFundAddress()` | Fund-transfer services — declares `providerFundAddress` |
+| `rejectNegotiation()` | Invalid requirements |
+| `getOrder()` | Load order on `OrderPaid`; verify `payTxHash`, `fundAmount`, `providerFundAddress` |
+| `deliverOrder()` | Submit Schema delivery |
+| `listOrders()` / `getDelivery()` | Policy recovery from past `createPolicy` orders |
+
+### Requester (scripts / hiring agents)
+
+| Method | When |
+|--------|------|
+| `negotiateOrder()` | Hire service; pass `fundAmount` + `fundToken` for fund-transfer services |
+| `payOrder()` | Pay service fee + principal |
+| `getDelivery()` | Read result JSON + tx hashes |
+
+### WebSocket events
+
+`NegotiationCreated` · `OrderCreated` · `OrderPaid` · `OrderCompleted` · `OrderRejected` · `OrderExpired`
+
+---
+
+## Services (Agent Store)
+
+| Service | Fund transfer | Accept method | Settlement |
+|---------|---------------|---------------|------------|
+| `createEnsName` | OFF | `acceptNegotiation` | Operator ETH for Base Names |
+| `createPolicy` | OFF | `acceptNegotiation` | Schema only |
+| `resolveEnsName` | OFF | `acceptNegotiation` | Read-only lookup |
+| `executePaymentJob` | **ON** | `acceptNegotiationWithFundAddress(ROUTER or payout EOA)` | CAP → Router/EOA → on-chain split |
+| `instantUsdcPay` | **ON** | `acceptNegotiationWithFundAddress(recipient)` | CAP → recipient directly |
+
+### Fund-transfer fields (SDK `Order` / `Negotiation`)
+
+When `require_fund_transfer=true` on a service:
+
+- `fundAmount` — principal in USDC base units (6 decimals)
+- `fundToken` — USDC contract address
+- `providerFundAddress` — set by provider at accept; requester `payOrder` batch sends principal here
+- `payTxHash` — on-chain proof buyer paid (required before delivery)
+- `feeAmount` — service fee in escrow (separate from principal)
+
+---
+
+## executePaymentJob
+
+### Requirements (Schema)
 
 ```json
 {
@@ -67,69 +154,116 @@ PROVIDER_AA_WALLET_ADDRESS=0x...   # Dashboard → Configure → AA Wallet
 }
 ```
 
-**SDK flow:**
+Requester must pass matching `fundAmount` + `fundToken` on `negotiateOrder`.
 
-1. Provider `acceptNegotiationWithFundAddress(negotiationId, PROVIDER_AA_WALLET_ADDRESS)`
-2. Requester `negotiateOrder` with `fundAmount` + `fundToken` (USDC)
-3. Requester `payOrder` — CROO sends payroll principal to provider AA wallet (`order.payTxHash`)
-4. Provider `deliverOrder` — CROO completes disbursement (`order.deliverTxHash`)
+### Provider flow
 
-**Delivery:**
+```
+1. acceptNegotiationWithFundAddress(negotiationId, ROUTER_ADDRESS)
+2. Requester payOrder → USDC to Router (order.payTxHash)
+3. OrderPaid → router.executeSplit → each recipient
+4. deliverOrder → { fundTxHash, recipients[{ txHash }], settlement: "router_payroll" }
+```
+
+### Delivery example
 
 ```json
 {
   "policyId": "pol_abc123",
   "totalUsdc": "1000000",
   "fundTxHash": "0x...",
+  "splitTxHash": "0x...",
+  "txHashes": ["0x...", "0x..."],
   "recipients": [
-    { "label": "team", "address": "0x...", "amount": "600000" },
-    { "label": "ops", "address": "0x...", "amount": "400000" }
+    { "label": "blockdevrel", "address": "0x...", "amount": "600000", "txHash": "0x..." },
+    { "label": "treasury", "address": "0x...", "amount": "400000", "txHash": "0x..." }
   ],
   "baseExplorer": "https://basescan.org/tx/0x...",
-  "settlement": "croo_payroll"
+  "settlement": "router_payroll"
 }
 ```
 
-Disbursement on-chain proof: `order.deliverTxHash` (also returned from `deliverOrder`).
+Use `executionGuide.payroll` from `createPolicy` delivery for copy-paste execute requirements.
 
-Use `executionGuide.payroll` from the `createPolicy` delivery for ready-to-copy requirements and fund amounts.
+---
 
-### instantUsdcPay (Instant USDC Pay — CAP direct send)
+## instantUsdcPay
 
-| Field | Value |
-|-------|-------|
-| Requirements | Text or Schema |
-| Deliverable | Schema |
-| Fund transfer | **ON** (required) |
-
-**CROO sends USDC directly to the recipient** — no Router contract, no provider payout wallet.
+CAP sends principal **directly to the recipient** — `providerFundAddress` = recipient `0x` address.
 
 ```
-NegotiateOrder ("send 0.1 USDC to alice.base.eth")
-→ AcceptNegotiationWithFundAddress(recipient 0x…)
-→ PayOrder (buyer pays principal + fee; CAP routes principal → recipient)
+negotiateOrder({ requirements, fundAmount, fundToken })
+→ acceptNegotiationWithFundAddress(recipientAddress)
+→ payOrder
 → deliverOrder { fundTxHash, settlement: "direct_cap" }
 ```
 
-| Service | Settlement path |
-|---------|-----------------|
-| **Instant USDC Pay** | CROO fund transfer → recipient address |
-| **USDC Split Execution** | CROO fund transfer → Router (or payout EOA) → multi-recipient split |
+Agent Store **must** have **Require Fund Transfer ON**.
 
-Agent Store **must** have **Require Fund Transfer ON** for Instant USDC Pay.
+---
 
-## SDK flow (executePaymentJob)
+## createPolicy
 
+Requirements: Text or Schema. Deliverable: Schema.
+
+```json
+{
+  "org": "acme",
+  "name": "Payroll split",
+  "recipients": [
+    { "subname": "blockdevrel", "address": "0x...", "label": "blockdevrel", "bps": 6000 },
+    { "subname": "treasury", "address": "0x...", "label": "treasury", "bps": 4000 }
+  ]
+}
 ```
-NegotiateOrder (policyId + totalUsdc, fundAmount + fundToken)
-→ AcceptNegotiationWithFundAddress(provider AA wallet)
-→ PayOrder (CROO signs — principal → AA wallet)
-→ order_paid → DeliverOrder (CROO SDK)
-→ order_completed → GetDelivery
+
+Or natural language when `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` is set.
+
+---
+
+## Testing
+
+```bash
+npm run verify:flow     # offline unit flow
+npm run verify:llm      # LangChain parsing
+npm run journey         # full CAP journey (provider must be Online)
 ```
 
-Reference: [CROO Quick Start](https://docs.croo.network/developer-docs/quick-start.md)
+Requester env for journey scripts:
+
+```bash
+CROO_REQUESTER_SDK_KEY=croo_sk_...   # second agent SDK key
+```
+
+---
+
+## Common mistakes
+
+| Mistake | Fix |
+|---------|-----|
+| Agent Offline | WebSocket not connected; check `CROO_WS_URL` and Railway deploy |
+| Instant pay missing principal | Agent Store → Require Fund Transfer **ON** |
+| Execute missing `payTxHash` | Requester must call `payOrder` before provider delivers |
+| `provider_fund_address must be empty` | Used `acceptNegotiationWithFundAddress` on a non-fund service |
+| Policy not found on execute | Hire `createPolicy` first; pass `policyId` explicitly |
+| Double disburse on replay | Order ledger + advisory locks + staged delivery — see idempotency table above |
+| Schema service double ENS/policy | Fixed — `stageOrderDelivery` before `savePolicy` / before CAP deliver |
+| Router split succeeded, deliver crashed | Fixed — `recoverRouterSplitFromChain` reads `SplitExecuted` logs |
+
+---
 
 ## Agent Store listing
 
 Checklist: [AGENT_STORE.md](./AGENT_STORE.md)
+
+## Hire Remifi (A2A requester)
+
+Other agents integrate via CAP only — see [REQUESTER.md](./REQUESTER.md) and [A2A_COMPOSABILITY.md](./A2A_COMPOSABILITY.md).
+
+Export completed orders for hackathon proof:
+
+```bash
+npm run export:orders
+```
+
+Writes `docs/ORDERS.json` with `requesterAgentId`, `payTxHash`, and delivery status per order.

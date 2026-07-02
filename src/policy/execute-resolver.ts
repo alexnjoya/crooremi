@@ -6,7 +6,7 @@ import { DEFAULT_GUIDE_TOTAL_USDC } from "./execution-guide.js";
 import { interpretExecutePayrollText } from "./llm.js";
 import { resolvePolicyIdFromRequester } from "./policy-lookup.js";
 import { extractPolicyId } from "./policy-id.js";
-import { loadLatestPolicy, type PolicyLoadContext } from "./store.js";
+import { type PolicyLoadContext } from "./store.js";
 import { parseAgentStoreExecuteRequirements } from "./store-requirements.js";
 import {
   hasLlmKeys,
@@ -86,14 +86,6 @@ async function resolveMissingPolicyId(
       );
       return fromRequester;
     }
-  }
-
-  const latest = await loadLatestPolicy();
-  if (latest) {
-    console.log(
-      `[remifi] execute: resolved policyId ${latest.policyId} from latest stored policy`,
-    );
-    return latest.policyId;
   }
 
   return null;
@@ -240,7 +232,6 @@ export async function parseExecutePayrollPlan(
   );
 }
 
-/** Provider AA wallet receives payroll principal at accept. */
 export async function resolveExecuteFundAddress(
   client: AgentClient,
   _requirements: string,

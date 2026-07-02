@@ -2,10 +2,8 @@ import { env } from "../config.js";
 import { amountFromBps } from "./bps.js";
 import type { CreatePolicyDelivery, ExecutionGuide } from "./types.js";
 
-/** Default example principal for executionGuide (1.00 USDC). */
 export const DEFAULT_GUIDE_TOTAL_USDC = "1000000";
 
-/** Flat execution service fee in 6-decimal USDC units (1.00 USDC). */
 export const EXECUTE_SERVICE_FEE_USDC = "1000000";
 
 export function buildExecutionGuide(

@@ -26,12 +26,6 @@ function assertPayrollFundTransfer(order: Order, plan: ExecuteBatchPlan): void {
   }
 }
 
-/**
- * Full payroll settlement:
- * 1. CROO payOrder → USDC on Router or payout EOA (fundTxHash)
- * 2. executeSplit or USDC.transfer → each recipient
- * 3. deliverOrder payload with on-chain proof
- */
 export async function executePayrollSettlement(
   order: Order,
   plan: ExecuteBatchPlan,

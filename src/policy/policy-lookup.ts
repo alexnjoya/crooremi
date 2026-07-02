@@ -2,6 +2,30 @@ import type { AgentClient } from "@croo-network/sdk";
 import { extractPolicyId, policyIdMatches } from "./policy-id.js";
 import type { CreatePolicyDelivery, StoredPolicy } from "./types.js";
 
+const MAX_ORDER_PAGES = 5;
+const ORDER_PAGE_SIZE = 100;
+
+async function listProviderOrders(client: AgentClient): Promise<
+  Awaited<ReturnType<AgentClient["listOrders"]>>
+> {
+  const all: Awaited<ReturnType<AgentClient["listOrders"]>> = [];
+  for (let page = 1; page <= MAX_ORDER_PAGES; page++) {
+    const batch = await client.listOrders({
+      role: "provider",
+      pageSize: ORDER_PAGE_SIZE,
+      page,
+    });
+    if (batch.length === 0) {
+      break;
+    }
+    all.push(...batch);
+    if (batch.length < ORDER_PAGE_SIZE) {
+      break;
+    }
+  }
+  return all;
+}
+
 function deliveryBody(raw: {
   deliverableText?: string;
   deliverableSchema?: string | Record<string, unknown>;
@@ -54,7 +78,6 @@ function parseCreatePolicyDelivery(raw: unknown): CreatePolicyDelivery | null {
   return null;
 }
 
-/** Load a stored policy from a completed createPolicy order on this provider. */
 export async function loadPolicyFromCompletedOrders(
   client: AgentClient,
   policyId: string,
@@ -62,7 +85,7 @@ export async function loadPolicyFromCompletedOrders(
   requesterAgentId?: string,
 ): Promise<StoredPolicy | null> {
   const targetId = policyId.trim().toLowerCase();
-  const orders = await client.listOrders({ role: "provider", pageSize: 100 });
+  const orders = await listProviderOrders(client);
 
   const candidates = orders
     .filter(
@@ -87,21 +110,19 @@ export async function loadPolicyFromCompletedOrders(
         };
       }
     } catch {
-      // try next order
     }
   }
 
   return null;
 }
 
-/** Latest completed createPolicy delivery for the same requester agent. */
 export async function resolvePolicyIdFromRequester(
   client: AgentClient,
   requesterAgentId: string,
   createPolicyServiceId: string,
   beforeIso?: string,
 ): Promise<string | null> {
-  const orders = await client.listOrders({ role: "provider", pageSize: 50 });
+  const orders = await listProviderOrders(client);
   const beforeMs = beforeIso ? Date.parse(beforeIso) : Number.POSITIVE_INFINITY;
 
   const candidates = orders
@@ -125,7 +146,6 @@ export async function resolvePolicyIdFromRequester(
         return policyId;
       }
     } catch {
-      // try next order
     }
   }
 

@@ -1,6 +1,7 @@
-import { keccak256, parseAbi, stringToBytes } from "viem";
+import { keccak256, parseAbi, parseAbiItem, stringToBytes } from "viem";
 import type { Order } from "@croo-network/sdk";
 import { env } from "../config.js";
+import { saveRouterSplitResult } from "../cap/order-ledger.js";
 import type { ExecuteBatchPlan } from "../policy/types.js";
 import { routerAbi } from "./abi/router-abi.js";
 import {
@@ -20,6 +21,16 @@ export function capOrderToSplitKey(orderId: string): `0x${string}` {
   return keccak256(stringToBytes(orderId));
 }
 
+export class RouterSplitAlreadyExecutedError extends Error {
+  readonly orderId: string;
+
+  constructor(orderId: string) {
+    super(`Split already executed for order ${orderId}`);
+    this.name = "RouterSplitAlreadyExecutedError";
+    this.orderId = orderId;
+  }
+}
+
 export function getRouterAddress(): `0x${string}` | undefined {
   const raw = env.ROUTER_ADDRESS?.trim();
   if (!raw) {
@@ -32,7 +43,6 @@ export function isRouterConfigured(): boolean {
   return Boolean(getRouterAddress());
 }
 
-/** Verify deployed Router matches env USDC, executor, and payout signer. */
 export async function validateRouterDeployment(): Promise<void> {
   const router = getRouterAddress();
   if (!router) {
@@ -124,7 +134,6 @@ async function assertRouterFunded(
   }
 }
 
-/** Single-tx split via Router after CAP payOrder funded the contract. */
 export async function disburseViaRouter(
   order: Order,
   plan: ExecuteBatchPlan,
@@ -162,7 +171,7 @@ export async function disburseViaRouter(
     args: [orderKey],
   });
   if (alreadyExecuted) {
-    throw new Error(`Split already executed for order ${order.orderId}`);
+    throw new RouterSplitAlreadyExecutedError(order.orderId);
   }
 
   const hash = await walletClient.writeContract({
@@ -186,10 +195,64 @@ export async function disburseViaRouter(
     totalAmount: requiredAmount.toString(),
   });
 
-  return plan.legs.map((leg) => ({
+  const disbursed = plan.legs.map((leg) => ({
     label: leg.recipient.label,
     address: leg.recipient.address,
     amount: leg.recipient.amount,
     txHash: hash,
   }));
+
+  await saveRouterSplitResult(order.orderId, order.serviceId, hash, disbursed);
+
+  return disbursed;
+}
+
+export async function recoverRouterSplitFromChain(
+  order: Order,
+  plan: ExecuteBatchPlan,
+): Promise<{ recipients: DisbursedRecipient[]; splitTxHash: `0x${string}` } | null> {
+  const router = getRouterAddress();
+  if (!router) {
+    return null;
+  }
+
+  const orderKey = capOrderToSplitKey(order.orderId);
+  const publicClient = createBasePublicClient();
+
+  const executed = await publicClient.readContract({
+    address: router,
+    abi: routerAbi,
+    functionName: "executed",
+    args: [orderKey],
+  });
+  if (!executed) {
+    return null;
+  }
+
+  const logs = await publicClient.getLogs({
+    address: router,
+    event: parseAbiItem(
+      "event SplitExecuted(bytes32 indexed orderKey, uint256 totalAmount, uint256 recipientCount)",
+    ),
+    args: { orderKey },
+    fromBlock: 0n,
+    toBlock: "latest",
+  });
+
+  const splitTxHash = (logs.at(-1)?.transactionHash ??
+    order.payTxHash) as `0x${string}` | undefined;
+  if (!splitTxHash) {
+    return null;
+  }
+
+  const recipients = plan.legs.map((leg) => ({
+    label: leg.recipient.label,
+    address: leg.recipient.address,
+    amount: leg.recipient.amount,
+    txHash: splitTxHash,
+  }));
+
+  await saveRouterSplitResult(order.orderId, order.serviceId, splitTxHash, recipients);
+
+  return { recipients, splitTxHash };
 }

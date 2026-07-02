@@ -41,6 +41,16 @@ function hasPayoutSigningKey(): boolean {
 export function validateStartup(): void {
   if (env.NODE_ENV !== "production") {
     console.log(`[remifi] starting in ${env.NODE_ENV} mode`);
+    if (!env.DATABASE_URL && env.CROO_SERVICE_ID_EXECUTE_PAYMENT) {
+      console.warn(
+        "[remifi] WARNING: DATABASE_URL unset — fund-transfer orders require Postgres order ledger",
+      );
+    }
+    if (!env.DATABASE_URL && env.CROO_SERVICE_ID_INSTANT_USDC_PAY) {
+      console.warn(
+        "[remifi] WARNING: DATABASE_URL unset — instantUsdcPay requires Postgres order ledger",
+      );
+    }
     return;
   }
 

@@ -1,17 +1,7 @@
-/**
- * Full Remifi journey: ENS → createPolicy → auto-execute all legs.
- * Provider must be Online. Requester AA wallet needs USDC for fees + principal.
- *
- * Run: npm run journey
- *
- * Env:
- *   JOURNEY_ORG          — org label (default: random journeyXXXX)
- *   JOURNEY_SKIP_ENS=1   — skip step 1 if names already registered
- *   JOURNEY_FUND_AMOUNT  — principal in 6-decimal USDC units (default: 100000 = 0.10 USDC)
- */
 import { config as loadEnv } from "dotenv";
 import { resolve } from "node:path";
 import { AgentClient, DeliverableType, EventType } from "@croo-network/sdk";
+import { defaultJourneyFundAmount, splitTestRecipients } from "./lib/fixtures.js";
 
 loadEnv({ path: resolve(process.cwd(), ".env"), override: true });
 
@@ -23,22 +13,13 @@ const executeServiceId = process.env.CROO_SERVICE_ID_EXECUTE_PAYMENT?.trim();
 const JOURNEY_ORG =
   process.env.JOURNEY_ORG?.trim() ?? `journey${Date.now().toString(36).slice(-5)}`;
 const SKIP_ENS = process.env.JOURNEY_SKIP_ENS === "1";
-const FUND_AMOUNT = process.env.JOURNEY_FUND_AMOUNT?.trim() ?? "100000";
-
-const RECIPIENTS = [
-  {
-    subname: "wallet-a",
-    address: "0xB98cFAC37b8bD7f549789718aC17F8aEE7cE0c37" as const,
-    label: "wallet-a",
-    bps: 3000,
-  },
-  {
-    subname: "wallet-b",
-    address: "0x173dbd987ea65f8dfd2d15ea2780acb615bdd8d9" as const,
-    label: "wallet-b",
-    bps: 6000,
-  },
-];
+const FUND_AMOUNT = defaultJourneyFundAmount();
+const RECIPIENTS = splitTestRecipients().map(({ subname, address, label, bps }) => ({
+  subname: subname!,
+  address,
+  label,
+  bps,
+}));
 
 type ExecutionPayrollGuide = {
   requirements: { policyId: string; totalUsdc: string };

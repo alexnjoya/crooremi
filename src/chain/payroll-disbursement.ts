@@ -1,12 +1,19 @@
-import { parseAbi } from "viem";
 import type { Order } from "@croo-network/sdk";
+import { parseAbi } from "viem";
 import { env } from "../config.js";
+import {
+  loadOrderFulfillment,
+  appendWalletDisbursementLeg,
+  walletRecipientsFromLedger,
+  routerSplitTxFromLedger,
+  getStagedDelivery,
+} from "../cap/order-ledger.js";
 import type { ExecuteBatchPlan, ExecutePayoutLeg } from "../policy/types.js";
 import {
   createBasePublicClient,
   createBaseWalletClient,
 } from "./chain-clients.js";
-import { disburseViaRouter, isRouterConfigured } from "./router.js";
+import { disburseViaRouter, isRouterConfigured, recoverRouterSplitFromChain, RouterSplitAlreadyExecutedError } from "./router.js";
 import { getPayoutWalletAddress, requirePayoutAccount } from "./payout-wallet.js";
 
 const erc20Abi = parseAbi([
@@ -83,13 +90,32 @@ async function disburseFromPayoutWallet(
 
   await assertPayoutWalletFunded(order, requiredAmount);
 
+  const ledger = await loadOrderFulfillment(order.orderId);
+  const completed = walletRecipientsFromLedger(ledger?.deliveryPayload ?? {});
+  const completedAddresses = new Set(
+    completed.map((row) => row.address.toLowerCase()),
+  );
+
   const publicClient = createBasePublicClient();
   const walletClient = createBaseWalletClient(account);
   const usdc = env.USDC_ADDRESS as `0x${string}`;
 
-  const results: DisbursedRecipient[] = [];
+  const results: DisbursedRecipient[] = [...completed.map((row) => ({
+    label: row.label,
+    address: row.address as `0x${string}`,
+    amount: row.amount,
+    txHash: row.txHash,
+  }))];
 
   for (const leg of plan.legs) {
+    if (completedAddresses.has(leg.recipient.address.toLowerCase())) {
+      console.log("[remifi] payroll transfer skipped (ledger)", {
+        label: leg.recipient.label,
+        address: leg.recipient.address,
+      });
+      continue;
+    }
+
     const amount = BigInt(leg.recipient.amount);
     const hash = await walletClient.writeContract({
       address: usdc,
@@ -105,25 +131,27 @@ async function disburseFromPayoutWallet(
       );
     }
 
-    console.log("[remifi] payroll transfer", {
+    const row: DisbursedRecipient = {
       label: leg.recipient.label,
       address: leg.recipient.address,
       amount: leg.recipient.amount,
       txHash: hash,
+    };
+
+    console.log("[remifi] payroll transfer", {
+      label: row.label,
+      address: row.address,
+      amount: row.amount,
+      txHash: row.txHash,
     });
 
-    results.push({
-      label: leg.recipient.label,
-      address: leg.recipient.address,
-      amount: leg.recipient.amount,
-      txHash: hash,
-    });
+    await appendWalletDisbursementLeg(order.orderId, order.serviceId, row);
+    results.push(row);
   }
 
   return { recipients: results, settlement: "wallet_payroll" };
 }
 
-/** Route payroll USDC to recipients (router preferred, EOA fallback). */
 export async function disbursePayrollLegs(
   order: Order,
   plan: ExecuteBatchPlan,
@@ -138,12 +166,58 @@ export async function disbursePayrollLegs(
   }
 
   if (isRouterConfigured()) {
-    const recipients = await disburseViaRouter(order, plan);
-    return {
-      recipients,
-      settlement: "router_payroll",
-      splitTxHash: recipients[0]?.txHash,
-    };
+    try {
+      const recipients = await disburseViaRouter(order, plan);
+      return {
+        recipients,
+        settlement: "router_payroll",
+        splitTxHash: recipients[0]?.txHash,
+      };
+    } catch (err) {
+      if (err instanceof RouterSplitAlreadyExecutedError) {
+        const ledger = await loadOrderFulfillment(err.orderId);
+        const payload = ledger?.deliveryPayload ?? {};
+
+        if (Array.isArray(payload.recipients) && payload.recipients.length > 0) {
+          const saved = payload.recipients as DisbursedRecipient[];
+          return {
+            recipients: saved,
+            settlement: "router_payroll",
+            splitTxHash: payload.splitTxHash as `0x${string}` | undefined,
+          };
+        }
+
+        const staged = getStagedDelivery(payload);
+        if (staged?.recipients) {
+          const saved = staged.recipients as DisbursedRecipient[];
+          return {
+            recipients: saved,
+            settlement: "router_payroll",
+            splitTxHash: staged.splitTxHash as `0x${string}` | undefined,
+          };
+        }
+
+        const routerRecipients = walletRecipientsFromLedger(payload);
+        const routerTx = routerSplitTxFromLedger(payload);
+        if (routerRecipients.length > 0 && routerTx) {
+          return {
+            recipients: routerRecipients as DisbursedRecipient[],
+            settlement: "router_payroll",
+            splitTxHash: routerTx as `0x${string}`,
+          };
+        }
+
+        const recovered = await recoverRouterSplitFromChain(order, plan);
+        if (recovered) {
+          return {
+            recipients: recovered.recipients,
+            settlement: "router_payroll",
+            splitTxHash: recovered.splitTxHash,
+          };
+        }
+      }
+      throw err;
+    }
   }
 
   return disburseFromPayoutWallet(order, plan);
